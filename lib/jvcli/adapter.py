@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import queue
 import secrets
 import socket
 import threading
@@ -15,7 +16,8 @@ from typing import Any
 from .safety import Cancelled, JvError, ProtocolError, SubmissionUncertain, strict_json
 from .transport import DEFAULT_BASE_URL, MAX_JSON_BYTES, JvApiClient, JvClientConfig, validate_base_url
 from .protocol import (MAX_PROMPT_BYTES, build_jv_prompt, flatten_tools, parse_agent_output,
-                       render_input_item, sanitize_internal_text)
+                       render_input_item, sanitize_internal_text, MAX_RESPONSE_REPAIRS,
+                       provider_failure, response_repair_prompt)
 
 
 class AdapterRuntime:
@@ -36,6 +38,8 @@ class AdapterRuntime:
         self.last_error: str | None = None
         self.signatures: dict[str, int] = {}
         self.worker: threading.Thread | None = None
+        self.notices = queue.SimpleQueue()
+        self.response_repairs = 0
 
     def begin_turn(self):
         if self.lock.locked():
@@ -44,6 +48,9 @@ class AdapterRuntime:
         self.signatures = {}
         self.last_error = None
         self.last_job_id = None
+        self.response_repairs = 0
+        while not self.notices.empty():
+            self.notices.get_nowait()
         self.cancel = threading.Event()
         self.status = 'waiting for agent'
 
@@ -69,12 +76,16 @@ class AdapterRuntime:
         self.server = None
         self.thread = None
 
-    def infer(self, request: dict, prompt: str, catalog: dict) -> list[dict]:
+    def _completed_job(self, prompt: str, repairing: bool = False) -> dict:
+        # Submission and polling errors deliberately escape. A new correction
+        # job is allowed only after a confirmed succeeded job with rejected text.
         if self.cancel.is_set():
             raise Cancelled('Turn cancelled before submission')
-        self.requests += 1
-        if self.requests > self.max_requests:
+        if self.requests >= self.max_requests:
             raise JvError('Model-request limit reached for this turn; split the task into smaller steps')
+        self.requests += 1
+        if repairing:
+            self.response_repairs += 1
         self.status = 'submitting model job'
         created = self.client.submit_job(prompt)
         self.last_job_id = created['id']
@@ -88,15 +99,40 @@ class AdapterRuntime:
             raise Cancelled('Turn cancelled; remote work may have completed')
         if terminal['status'] != 'succeeded':
             raise JvError(f'JV job {created["id"]} failed; use jvcli job {created["id"]} to inspect its status')
-        answer = terminal.get('answer')
-        if not isinstance(answer, str):
-            raise ProtocolError('JV job completed without a text answer')
-        items = parse_agent_output(answer, catalog)
-        if request.get('tool_choice') == 'required' and any(item['type'] == 'message' for item in items):
-            raise ProtocolError('Model returned text when a tool call was required')
+        return terminal
+
+    def infer(self, request: dict, prompt: str, catalog: dict) -> list[dict]:
+        next_prompt = prompt
+        for attempt in range(MAX_RESPONSE_REPAIRS + 1):
+            terminal = self._completed_job(next_prompt, repairing=attempt > 0)
+            try:
+                answer = terminal.get('answer')
+                if not isinstance(answer, str):
+                    raise ProtocolError('JV job completed without a text answer')
+                items = parse_agent_output(answer, catalog)
+                if any(item['type'] == 'message' and provider_failure(item['content'][0]['text'])
+                       for item in items):
+                    raise ProtocolError('JV provider returned a generic error answer')
+                if request.get('tool_choice') == 'required' and any(item['type'] == 'message' for item in items):
+                    raise ProtocolError('Model returned text when a tool call was required')
+            except ProtocolError as exc:
+                if self.cancel.is_set():
+                    raise Cancelled('Turn cancelled before response correction') from None
+                if attempt == MAX_RESPONSE_REPAIRS or self.requests >= self.max_requests:
+                    raise ProtocolError(
+                        f'{exc}. Response correction stopped after {attempt} extra model jobs; '
+                        f'no tools from the rejected responses were executed. '
+                        f'Inspect: jvcli job {self.last_job_id} --json') from None
+                next_prompt = response_repair_prompt(prompt, str(exc))
+                self.notices.put(
+                    f'JV job {self.last_job_id}: {exc}. '
+                    f'Requesting corrected response ({attempt + 1}/{MAX_RESPONSE_REPAIRS}); '
+                    'no tools from the rejected response ran.')
+                continue
+            break
         response_files = (terminal.get('response') or {}).get('files', []) if isinstance(terminal.get('response') or {}, dict) else []
         if response_files:
-            note = f'\n\n[Generated files are available. Run: jvcli job {created["id"]} --download-dir ./jv-output]'
+            note = f'\n\n[Generated files are available. Run: jvcli job {self.last_job_id} --download-dir ./jv-output]'
             for item in items:
                 if item['type'] == 'message':
                     item['content'][0]['text'] += note

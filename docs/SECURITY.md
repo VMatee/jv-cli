@@ -26,6 +26,8 @@ Only whole JSON objects or fenced JSON envelopes can request tools. Arbitrary pr
 
 Malformed Markdown escapes are repaired conservatively in protocol identifiers. Arbitrary shell commands and patch contents are not rewritten. Unknown tools, empty tool lists, duplicate JSON fields, invalid schemas and malformed output fail instead of silently pretending the task succeeded. Limits bound tool calls, repeated actions, model requests, context and wait times.
 
+Literal newlines/tabs inside JSON strings retain their decoded values; a custom tool may supply `input_lines`, joined with newlines. Ambiguous/truncated JSON is not completed by guessing. Every call in a batch must validate before any is exposed to the engine. After a confirmed succeeded job returns an invalid envelope or one of two exact known generic error answers, the adapter may create up to two correction jobs. The same tool catalog, workspace restrictions, cancellation and overall request/turn limits apply. This is not a retry of an uncertain submission, a replay of executed tools, or a bypass for a concrete refusal. Raw rejected answers are not added to local logs or correction prompts.
+
 The launcher sends selected code, instructions and command outputs to the configured JV API. It does not redact all secrets from project files. Session histories can contain sensitive code/tool output even though authentication secrets are not deliberately stored. Treat `.state/` and backup archives as private; do not attach them wholesale to public bug reports.
 
 ## Retry and cancellation

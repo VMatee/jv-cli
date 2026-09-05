@@ -36,6 +36,8 @@ The script prints JSON and saves `report.json` in its fixture directory. It exit
 
 The script passed against 0.149.1 during release preparation. Keep a fresh report from each Ubuntu deployment class.
 
+It also exercises malformed-response correction after a real shell tool, generic-error recovery, and repeated invalid batches that must fail without executing even their valid member. Optionally pass `--flask-python /absolute/path/to/disposable/venv/bin/python` with Flask already installed to create a small Flask app through the real patch tool and verify its HTML/CSS with Flask's test client. This optional check installs nothing and starts no persistent server. Scripted replies do not establish live-model compatibility.
+
 ## 3. Live API contract
 
 ```bash

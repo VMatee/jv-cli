@@ -24,9 +24,23 @@ That regression is covered: the launcher only passes `--color never` on the init
 
 ## Raw tool JSON printed / malformed tool response
 
-This release narrowly repairs malformed Markdown escapes in identifiers, validates that the requested tool was offered, and rejects malformed action envelopes. It does not execute a tool guessed from arbitrary prose. A model that repeatedly returns invalid envelopes needs prompt/model/server evaluation; permissive parsing is not a safe universal repair.
+The adapter requires a complete, validated action envelope before exposing any tool call to the engine. It preserves decoded command/patch contents when handling invalid escapes or literal newlines/tabs inside JSON strings. Multiline custom patches can use an explicit `input_lines` list instead of one large escaped string. Missing quotes, truncated objects, unknown tools and invalid arguments are not guessed.
+
+After a **confirmed completed** JV job returns invalid tool output, the adapter can request at most two corrected responses, showing each attempt and its job ID. These are additional model jobs and can consume quota. Earlier confirmed tool results remain in the prompt; rejected calls are not executed. Repeated invalid responses stop the turn with a nonzero exit and an inspection command:
+
+```bash
+jvcli job JOB_ID --json
+```
+
+This correction path does not resubmit a failed/ambiguous job creation or a failed poll. It cannot guarantee that the assigned model will produce usable tools. Do not share a complete job response without reviewing it for private project data.
 
 If final text literally contains `\n`, this can be a double-escaped model response. The launcher does not blindly unescape all backslashes, which would damage code and paths.
+
+## Generic error answer even though the JV job succeeded
+
+The API's `succeeded` status means it completed a job, not that the coding task succeeded. The two observed generic responses beginning “I'm having a hard time fulfilling your request” and “I encountered an error doing what you asked” now use the same bounded correction path instead of counting as a successful coding turn. Specific explanations or refusals are still delivered normally.
+
+If `jvcli ask "Reply with exactly: JV API OK"` works but coding fails, authentication/basic inference are working; structured tool output can still fail. `--allow-network` permits tool downloads, but does not repair model JSON. Use a fresh coding session after updating; inspect the final reported job if corrections are exhausted.
 
 ## Command exit 128 from git log
 

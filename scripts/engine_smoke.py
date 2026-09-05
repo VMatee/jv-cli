@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Use the REAL locally installed engine against scripted model responses.
 
-No JV account, public LLM request or public network connection is used.
+No JV account or live LLM request is used. Test model traffic stays on loopback.
 Creates a disposable fixture under the installation's .state/engine-checks.
 This script must pass on the target Ubuntu host before distributing to users.
 """
@@ -43,14 +43,15 @@ class ScriptedClient:
             raise JvError('Actual tool output was not returned in the next model request')
         self.count += 1
         key = f'job_check_{self.count}'
-        self.pending[key] = json.dumps(answer)
+        self.pending[key] = answer if isinstance(answer, str) else json.dumps(answer)
         return {'id': key, 'conversation_id': f'conv_check_{self.count}', 'status': 'queued'}
     def wait_for_job(self, key, **kwargs):
         return {'id': key, 'conversation_id': kwargs.get('conversation_id'), 'status': 'succeeded',
                 'answer': self.pending[key], 'response': {'files': []}}
 
 
-def run_case(engine, folder, name, steps, *, thread_id=None, read_only=False):
+def run_case(engine, folder, name, steps, *, thread_id=None, read_only=False,
+             repairs=0, expected_error=None):
     client = ScriptedClient(steps)
     runtime = AdapterRuntime(client, heartbeat=.5)
     output, errors = io.StringIO(), io.StringIO()
@@ -61,7 +62,10 @@ def run_case(engine, folder, name, steps, *, thread_id=None, read_only=False):
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
             rc, thread = cli._run_engine(engine, f'Run the local acceptance case: {name}', thread_id,
                 session_dir=folder, overrides=overrides, runtime=runtime, turn_timeout=90)
-        if rc != 0 or client.steps:
+        success = rc == 0 if expected_error is None else (
+            rc != 0 and expected_error in (runtime.last_error or '') and
+            expected_error in errors.getvalue())
+        if not success or client.steps or runtime.response_repairs != repairs:
             raise JvError(f'{name} failed (exit {rc}):\n{errors.getvalue()[-5000:]}\n{output.getvalue()[-1000:]}')
         return thread
     finally:
@@ -71,6 +75,7 @@ def run_case(engine, folder, name, steps, *, thread_id=None, read_only=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--engine', help='Explicit path to the pinned real Codex engine')
+    parser.add_argument('--flask-python', help='Optional Python with Flask already installed; test a disposable generated Flask app without installing packages')
     args = parser.parse_args()
     if os.geteuid() == 0:
         print('Run the real-engine acceptance test as your normal Ubuntu user, not root.', file=sys.stderr)
@@ -104,6 +109,66 @@ def main():
         if not (workspace / 'generated.txt').is_file() or (workspace / 'generated.txt').read_text().strip() != 'PATCH_OK':
             raise JvError('The custom apply_patch tool did not create the expected file')
         checks['real_resume_and_custom_apply_patch'] = True
+        malformed_patch = '{"type":"custom_tool_call","name":"apply_patch","input":"*** Begin Patch'
+        thread = run_case(engine, session, 'recover a malformed patch after a successful tool', [
+            ({'type':'tool_call','name':'shell_command','arguments':{'command':'cat smoke.txt'}}, None),
+            (malformed_patch, marker),
+            ({'type':'custom_tool_call','name':'apply_patch','input_lines':[
+                '*** Begin Patch', '*** Add File: recovered.txt', '+RECOVERED_PATCH_OK',
+                '*** End Patch']}, marker),
+            ({'type':'tool_call','name':'shell_command','arguments':{'command':'cat recovered.txt'}}, None),
+            ({'type':'final','text':'RECOVERY_OK'}, 'RECOVERED_PATCH_OK')
+        ], thread_id=thread, repairs=1)
+        if (workspace / 'recovered.txt').read_text().strip() != 'RECOVERED_PATCH_OK':
+            raise JvError('Response correction did not produce the expected patch')
+        checks['malformed_response_recovery_and_tool_result'] = True
+        run_case(engine, session, 'recover a generic provider error', [
+            ("I'm having a hard time fulfilling your request. Can I help you with something else instead?", None),
+            ({'type':'tool_call','name':'shell_command','arguments':{'command':'cat smoke.txt'}}, None),
+            ({'type':'final','text':'PROVIDER_RECOVERY_OK'}, marker)
+        ], repairs=1)
+        checks['generic_provider_error_recovery'] = True
+        # Even the valid member of a rejected batch must never execute.
+        invalid_batch = {'type':'tool_calls','calls':[
+            {'type':'tool_call','name':'shell_command','arguments':{'command':'touch must-not-exist.txt'}},
+            {'type':'tool_call','name':'unoffered_tool','arguments':{}}]}
+        run_case(engine, session, 'stop repeated invalid responses without executing tools',
+                 [(invalid_batch, None)] * 3, repairs=2,
+                 expected_error='Response correction stopped after 2 extra model jobs')
+        if (workspace / 'must-not-exist.txt').exists():
+            raise JvError('SAFETY FAILURE: a rejected tool batch was partially executed')
+        checks['repeated_invalid_response_fails_without_execution'] = True
+        if args.flask_python:
+            # Do not resolve a venv's python symlink: its directory selects the
+            # virtual environment even when the binary points outside it.
+            flask_python = str(Path(args.flask_python).absolute())
+            if not Path(flask_python).is_file():
+                raise JvError('The requested Flask Python executable does not exist')
+            files = {
+                'app.py': 'from flask import Flask, render_template\napp = Flask(__name__)\n@app.get("/")\ndef index():\n    return render_template("index.html")\n',
+                'templates/index.html': '<!doctype html><html lang="en"><head><title>Thailand</title><link rel="stylesheet" href="/static/style.css"></head><body><h1>I love Thailand</h1></body></html>\n',
+                'static/style.css': 'h1 { animation: pulse 2s ease-in-out infinite; }\n@keyframes pulse { 50% { transform: scale(1.05); } }\n@media (prefers-reduced-motion: reduce) { h1 { animation: none; } }\n',
+                'requirements.txt': 'Flask>=3,<4\n',
+            }
+            lines = ['*** Begin Patch']
+            for name, content in files.items():
+                lines += ['*** Add File: ' + name] + ['+' + line for line in content.splitlines()]
+            lines.append('*** End Patch')
+            code = ('from app import app; client = app.test_client(); response = client.get("/"); '
+                    'assert response.status_code == 200; assert b"I love Thailand" in response.data; '
+                    'css = client.get("/static/style.css"); assert css.status_code == 200; '
+                    'assert b"@keyframes" in css.data; print("FLASK_HTTP_AND_ANIMATION_OK")')
+            run_case(engine, session, 'generate and exercise a Flask app after malformed output', [
+                (malformed_patch, None),
+                ({'type':'custom_tool_call','name':'apply_patch','input_lines':lines}, None),
+                ({'type':'tool_call','name':'shell_command','arguments':{
+                    'command': shlex.quote(flask_python) + ' -B -c ' + shlex.quote(code)}}, None),
+                ({'type':'final','text':'FLASK_CHECK_DONE'}, 'FLASK_HTTP_AND_ANIMATION_OK')
+            ], repairs=1)
+            for name, content in files.items():
+                if (workspace / name).read_text() != content:
+                    raise JvError('Flask fixture contents did not match the validated patch')
+            checks['flask_app_creation_and_test_client_after_recovery'] = True
         run_case(engine, session, 'sandbox outside-workspace write denial', [
             ({'type':'tool_call','name':'shell_command','arguments':{'command':'printf JV_WRITE_ATTEMPT; printf changed > ' + shlex.quote(str(protected))}},None),
             ({'type':'final','text':'DENIAL_CHECK_DONE'},'JV_WRITE_ATTEMPT')], thread_id=thread)

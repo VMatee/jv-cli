@@ -55,7 +55,9 @@ Upstream JV jobs are polled; keepalive comments maintain the local stream while 
 
 The API prompt is capped below 100 KiB. The adapter reserves bounded space for runtime instructions, complete tool definitions, newest user request and recent conversation. Oversized old history and whole tool definitions can be omitted with explicit markers. The adapter does not know the real server-assigned model's context window; catalog metadata is an adapter setting, not a hardware/model guarantee.
 
-Strict malformed-output failure favors predictable behavior over guessing a dangerous command. Native structured tool support at the server would reduce dependence on prompt adherence, but is not implemented here. Large repositories and long sessions require live evaluation.
+The adapter rejects malformed output before emitting tool calls. A confirmed completed job with invalid output can receive up to two correction jobs with the original task, catalog and actual tool results retained. Raw rejected text is not replayed; HTTP submission/poll failures are not resubmitted by this path. Repeated invalid output ends with an explicit failure and inspectable job ID. Exact observed generic provider error answers follow the same path; specific blockers/refusals remain final text. SSE keepalives continue during correction.
+
+Custom multiline patches can use `input_lines`; literal newlines/tabs inside JSON strings can be encoded without changing their decoded value. Missing quotes, commas or truncated code are never invented. Native structured tool support at the server would reduce dependence on prompt adherence, but is not implemented here. Large repositories and long sessions require live evaluation.
 
 ## State layout
 

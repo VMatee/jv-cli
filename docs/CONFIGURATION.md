@@ -49,6 +49,7 @@ HTTPS is required except loopback HTTP. Base origins must not contain embedded c
 - Uploads: at most 10 files, 25 MiB each, 100 MiB combined; regular non-symlink files.
 - Downloads: at most 10 files, 25 MiB each, 100 MiB combined; exact declared size, no overwrite.
 - Model output: at most 8 tool calls in an envelope. A fourth identical action in a turn stops the loop.
+- Invalid completed model responses: at most two correction jobs per response, also counted against `JVCLI_MAX_REQUESTS` and the turn timeout. Progress is shown; session metadata records `model_requests` and `response_repairs`. Additional jobs can consume service quota.
 - ID validation: ASCII letters, digits, hyphens and underscores. Other opaque-ID formats are unsupported.
 
 Some limits are deliberately conservative. The server can enforce stricter limits. The tool argument checker covers common types/required fields, not every JSON Schema keyword.

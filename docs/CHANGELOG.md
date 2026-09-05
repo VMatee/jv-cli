@@ -4,6 +4,11 @@ This is the first public GitHub release baseline.
 
 ## Protocol and tool handling
 
+- Added bounded correction for malformed tool replies and the two observed generic provider error answers, only after confirmed succeeded jobs. Unknown tools/invalid schemas remain blocked; uncertain submissions are not resubmitted.
+- Added multiline custom-tool `input_lines`, value-preserving literal newline/tab handling, smaller-action guidance, and removal of identical duplicated wrapper instructions.
+- Reported correction attempts and the final JV job ID, recorded per-turn request/correction counts, and suppressed duplicate adapter error summaries.
+- Added recovery regressions and real-engine checks for corrected patches, provider-error recovery, atomic rejection, and optional generated Flask application verification.
+
 - Replaced permissive tool parsing with whole-envelope parsing, duplicate-key rejection, offered-tool validation, basic argument-schema checks, bounded recursion/calls and repeated-action limits.
 - Kept narrow repair for Markdown-escaped protocol identifiers, without rewriting command/patch contents or arbitrary URLs/provider names.
 - Preserved the second-turn `exec resume` fix: no `--color` after `resume`.

@@ -196,6 +196,8 @@ jvcli auth status
 
 If `jvcli` is not found, add `$HOME/.local/bin` to the current shell's `PATH`. If the engine is absent or mismatched, rerun `./install.sh` from a trusted clone or the installed `install.sh`. Do not install an unrelated similarly named system package. See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
+If a completed model job returns malformed tool JSON or a known generic error answer, JV CLI requests up to two corrected responses before stopping with the job ID. No rejected tool call executes. Corrections can consume additional quota and cannot guarantee model quality; `--allow-network` only changes tool networking, not response formatting.
+
 ## Development
 
 Use portable mode or run `./jvcli` directly from the repository. Generated state, runtime, caches, backups, build output, local environment files, and Python bytecode are ignored.
@@ -209,6 +211,8 @@ python3 -B scripts/engine_smoke.py
 ```
 
 The unit suite uses temporary homes and mock services. The engine smoke test uses the real pinned local engine with a scripted loopback model and does not contact the live JV API. `scripts/live_smoke.py` is optional, requires an account, asks for confirmation, and may consume quota.
+
+To additionally check generated Flask files and HTML/CSS responses after a malformed reply, pass `--flask-python /absolute/path/to/venv/bin/python` to `engine_smoke.py`, using a disposable virtual environment that already contains Flask. The check uses Flask's test client, installs no packages itself, and leaves no server running. It tests adapter/tool integration, not the live model's coding ability.
 
 Build and independently verify a release:
 

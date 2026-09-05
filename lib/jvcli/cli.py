@@ -348,6 +348,12 @@ def _run_engine(engine, prompt, thread_id, *, session_dir=None, overrides=(), ru
     last_progress = started
     try:
         while True:
+            if runtime:
+                while True:
+                    try:
+                        say(redact(runtime.notices.get_nowait(), secrets))
+                    except queue.Empty:
+                        break
             if time.monotonic() - started >= turn_timeout:
                 if runtime:
                     runtime.cancel.set()
@@ -401,7 +407,7 @@ def _run_engine(engine, prompt, thread_id, *, session_dir=None, overrides=(), ru
                 failed = True
                 error = event.get('error')
                 message = error.get('message') if isinstance(error, dict) else event.get('message')
-                if message:
+                if message and not (runtime and runtime.last_error):
                     say('Error: ' + redact(str(message), secrets))
     except KeyboardInterrupt:
         forced_rc = 130
@@ -430,7 +436,7 @@ def _run_engine(engine, prompt, thread_id, *, session_dir=None, overrides=(), ru
                 say(line.rstrip())
     if runtime and runtime.last_error:
         failed = True
-        say('JV adapter: ' + runtime.last_error)
+        say('JV adapter: ' + redact(runtime.last_error, secrets))
     if forced_rc is not None:
         return forced_rc, current
     if rc == 0 and not failed and (not completed or not saw_message):
@@ -555,11 +561,13 @@ def _run_session(prompt=None, *, resume=None, read_only=False, allow_network=Fal
                     metadata['thread_id'] = thread_id
                 metadata['last_job_id'] = runtime.last_job_id
                 metadata['last_exit_code'] = rc
+                metadata['model_requests'] = runtime.requests
+                metadata['response_repairs'] = runtime.response_repairs
                 atomic_write(session_dir / 'session.json', json.dumps(metadata, indent=2) + '\n')
                 if one_shot or rc in (124, 130):
                     return rc
                 if rc:
-                    say('Turn failed. No automatic retry was made. Check /status before resubmitting a task.')
+                    say('Turn stopped. Check /status and the reported JV job before resubmitting a task.')
         finally:
             runtime.close()
             _logout(client)

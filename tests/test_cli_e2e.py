@@ -16,6 +16,7 @@ class E2EJvHandler(BaseHTTPRequestHandler):
     jobs = {}
     saw_logout = False
     submitted = []
+    answer_sequence = None
 
     def log_message(self, format, *args):
         pass
@@ -48,7 +49,9 @@ class E2EJvHandler(BaseHTTPRequestHandler):
             cls.job_count += 1
             job_id = f"job_{cls.job_count}"
             conv_id = f"conv_{cls.job_count}"
-            if cls.job_count == 1:
+            if cls.answer_sequence is not None:
+                answer = cls.answer_sequence[min(cls.job_count - 1, len(cls.answer_sequence) - 1)]
+            elif cls.job_count == 1:
                 answer = r'{"type":"tool\_call","name":"shell\_command","arguments":{"command":"pwd","timeout\_ms":10000}}'
             else:
                 answer = '{"type":"final","text":"E2E done"}'
@@ -137,6 +140,12 @@ def request(payload):
         if value == "[DONE]":
             continue
         events.append(json.loads(value))
+    failure = next((e for e in events if e.get("type") == "error"), None)
+    if failure:
+        message = failure.get("message", "adapter failed")
+        print(json.dumps({"type":"error","message":message}), flush=True)
+        print(json.dumps({"type":"turn.failed","error":{"message":message}}), flush=True)
+        raise SystemExit(1)
     return events
 
 print(json.dumps({"type":"thread.started","thread_id":"thread_e2e"}), flush=True)
@@ -164,6 +173,67 @@ print(json.dumps({"type":"turn.completed","usage":{"input_tokens":10,"cached_inp
 
 
 class CliEndToEndTests(unittest.TestCase):
+    def recovery_case(self, answers, *, success):
+        class Handler(E2EJvHandler):
+            job_count, jobs, submitted, saw_logout = 0, {}, [], False
+            answer_sequence = answers
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                home, workspace = root / "home", root / "workspace"
+                home.mkdir()
+                workspace.mkdir()
+                fake = root / "engine"
+                fake.write_text(FAKE_ENGINE)
+                fake.chmod(0o755)
+                env = {**os.environ, "HOME": str(home),
+                       "JV_API_BASE_URL": f"http://127.0.0.1:{server.server_address[1]}",
+                       "JV_API_USERNAME": "user", "JV_API_PASSWORD": "pass",
+                       "JVCLI_CODEX_BIN": str(fake), "JVCLI_HOME": str(root / "state"),
+                       "JVCLI_POLL_INTERVAL": "0.01", "JVCLI_WAIT_TIMEOUT": "3"}
+                result = subprocess.run([sys.executable, "-B", str(ROOT / "bin/jvcli"),
+                    "exec", "--json", "test task"], cwd=workspace, env=env,
+                    capture_output=True, text=True, timeout=15)
+                self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
+                self.assertTrue(Handler.saw_logout)
+                self.assertEqual(Handler.job_count, len(answers))
+                self.assertIn("Requesting corrected response", result.stderr)
+                self.assertNotIn("e2e-token", result.stdout + result.stderr)
+                events = [json.loads(line) for line in result.stdout.splitlines()]
+                if success:
+                    self.assertIn("E2E done", result.stdout)
+                    self.assertEqual(sum(e["type"] == "item.started" for e in events), 1)
+                else:
+                    self.assertNotIn("E2E done", result.stdout)
+                    self.assertFalse(any(e["type"] in ("item.started", "turn.completed") for e in events))
+                    self.assertEqual(result.stderr.count("Response correction stopped"), 1)
+                    self.assertIn("jvcli job job_3 --json", result.stderr)
+                metadata = json.loads(next((root / "state/runs").glob("*/session.json")).read_text())
+                self.assertEqual(metadata["model_requests"], len(answers))
+                self.assertEqual(metadata["response_repairs"], 2)
+                self.assertEqual(metadata["last_exit_code"], result.returncode)
+                self.assertEqual(metadata["last_job_id"], f"job_{len(answers)}")
+                self.assertNotIn("e2e-token", json.dumps(metadata))
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=1)
+
+    def test_corrections_complete_tool_loop_and_save_counts(self):
+        self.recovery_case([
+            "I'm having a hard time fulfilling your request. Can I help you with something else instead?",
+            '{"type":"custom_tool_call","name":"apply_patch","input":"TRUNCATED',
+            '{"type":"tool_call","name":"shell_command","arguments":{"command":"pwd","timeout_ms":10000}}',
+            '{"type":"final","text":"E2E done"}',
+        ], success=True)
+
+    def test_exhausted_corrections_fail_and_logout_without_tool_events(self):
+        self.recovery_case(["I encountered an error doing what you asked. Could you try again?"] * 3,
+                           success=False)
+
     def test_login_adapter_tool_loop_and_logout(self):
         E2EJvHandler.job_count = 0
         E2EJvHandler.jobs = {}
