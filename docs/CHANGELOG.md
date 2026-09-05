@@ -4,6 +4,10 @@ This is the first public GitHub release baseline.
 
 ## Protocol and tool handling
 
+- Fixed client/server execution-context confusion by explicitly treating JV tools as delegated tools on the external user's PC, not native server tools.
+- Requested fenced JSON to protect code from the service's observed Markdown-like formatting; accepted the standalone JSON language badge before one complete fenced block without rewriting code.
+- Verified the candidate against the live JV API: local Flask file creation, project-local dependency installation and six application checks succeeded in seven model jobs with zero corrections. Independent localhost HTTP checks also passed; no server was left running.
+
 - Added bounded correction for malformed tool replies and the two observed generic provider error answers, only after confirmed succeeded jobs. Unknown tools/invalid schemas remain blocked; uncertain submissions are not resubmitted.
 - Added multiline custom-tool `input_lines`, value-preserving literal newline/tab handling, smaller-action guidance, and removal of identical duplicated wrapper instructions.
 - Reported correction attempts and the final JV job ID, recorded per-turn request/correction counts, and suppressed duplicate adapter error summaries.

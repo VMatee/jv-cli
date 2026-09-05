@@ -24,6 +24,8 @@ That regression is covered: the launcher only passes `--color never` on the init
 
 ## Raw tool JSON printed / malformed tool response
 
+Live diagnostics found Markdown-like damage to unfenced replies: array brackets were escaped, Python double-underscore names became bold markers, and quotes in code lost their JSON escaping. JV CLI now requests one fenced JSON block to protect the contents. It also accepts a standalone `JSON` language label immediately before that one complete block, as observed from the service. It does not strip arbitrary prose or guess how to reconstruct damaged code.
+
 The adapter requires a complete, validated action envelope before exposing any tool call to the engine. It preserves decoded command/patch contents when handling invalid escapes or literal newlines/tabs inside JSON strings. Multiline custom patches can use an explicit `input_lines` list instead of one large escaped string. Missing quotes, truncated objects, unknown tools and invalid arguments are not guessed.
 
 After a **confirmed completed** JV job returns invalid tool output, the adapter can request at most two corrected responses, showing each attempt and its job ID. These are additional model jobs and can consume quota. Earlier confirmed tool results remain in the prompt; rejected calls are not executed. Repeated invalid responses stop the turn with a nonzero exit and an inspection command:
@@ -41,6 +43,14 @@ If final text literally contains `\n`, this can be a double-escaped model respon
 The API's `succeeded` status means it completed a job, not that the coding task succeeded. The two observed generic responses beginning “I'm having a hard time fulfilling your request” and “I encountered an error doing what you asked” now use the same bounded correction path instead of counting as a successful coding turn. Specific explanations or refusals are still delivered normally.
 
 If `jvcli ask "Reply with exactly: JV API OK"` works but coding fails, authentication/basic inference are working; structured tool output can still fail. `--allow-network` permits tool downloads, but does not repair model JSON. Use a fresh coding session after updating; inspect the final reported job if corrections are exhausted.
+
+## Model claims the client workspace is not mounted
+
+JV CLI's tools run on the user's PC; the API server does not need a mount of the user's project. A missing path in the server's environment is not evidence that the client workspace is missing. In live testing, the model confused these environments even after a successful local shell result.
+
+The bridge instructions now explicitly distinguish the external client executor from the API server and ask for protocol messages, not server-side tool execution. Update JV CLI and start a fresh session rather than resuming the mistaken explanation. Do not move your project, expose your home directory to the server, or disable sandboxing to solve this response-format/context issue.
+
+A syntactically valid final explanation can still be wrong, and an API job's `succeeded` status or CLI exit 0 does not certify the requested deliverable. Inspect actual tool results and tests; do not treat every refusal as a parsing error or retry it indefinitely.
 
 ## Command exit 128 from git log
 

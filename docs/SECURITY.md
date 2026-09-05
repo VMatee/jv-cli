@@ -24,6 +24,10 @@ The adapter binds only to 127.0.0.1 on an ephemeral port, requires a cryptograph
 
 Only whole JSON objects or fenced JSON envelopes can request tools. Arbitrary prose containing a JSON example is not scanned for execution. Tool names must have been offered to that request; namespaces, required fields and basic argument types are checked. This is not a complete JSON Schema validator. The engine's own validation and sandbox remain important.
 
+A single complete fenced block may have the standalone language label `JSON` immediately before it. This narrowly handles the service's observed code-block presentation; surrounding explanations, multiple blocks and malformed/truncated JSON do not become executable tools. Code contents are not Markdown-decoded to reconstruct lost underscores, quotes or indentation.
+
+Prompts distinguish the external client executor from the inference server. This is a compatibility instruction, not a guarantee about server-side behavior. Never mount additional local data on a remote server just because a model claims a client path is missing there.
+
 Malformed Markdown escapes are repaired conservatively in protocol identifiers. Arbitrary shell commands and patch contents are not rewritten. Unknown tools, empty tool lists, duplicate JSON fields, invalid schemas and malformed output fail instead of silently pretending the task succeeded. Limits bound tool calls, repeated actions, model requests, context and wait times.
 
 Literal newlines/tabs inside JSON strings retain their decoded values; a custom tool may supply `input_lines`, joined with newlines. Ambiguous/truncated JSON is not completed by guessing. Every call in a batch must validate before any is exposed to the engine. After a confirmed succeeded job returns an invalid envelope or one of two exact known generic error answers, the adapter may create up to two correction jobs. The same tool catalog, workspace restrictions, cancellation and overall request/turn limits apply. This is not a retry of an uncertain submission, a replay of executed tools, or a bypass for a concrete refusal. Raw rejected answers are not added to local logs or correction prompts.

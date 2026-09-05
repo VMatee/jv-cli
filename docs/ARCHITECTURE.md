@@ -53,6 +53,10 @@ Upstream JV jobs are polled; keepalive comments maintain the local stream while 
 
 ## Context and reliability
 
+The tool catalog is embedded in a text job, not passed as native JV API tool parameters. Instructions explicitly identify an external client executor: the model should return a protocol message and use the supplied client tool results instead of checking for client paths in the server's native environment.
+
+The requested wire format is one fenced JSON code block. A live round-trip test found that unfenced code acquired Markdown-like damage, while a code block preserved it but returned a separate `JSON` language label. The parser accepts that exact label-plus-whole-block presentation as well as ordinary whole JSON/fences; it never extracts executable JSON from arbitrary surrounding prose. The precise server component responsible for the observed formatting was not inspected.
+
 The API prompt is capped below 100 KiB. The adapter reserves bounded space for runtime instructions, complete tool definitions, newest user request and recent conversation. Oversized old history and whole tool definitions can be omitted with explicit markers. The adapter does not know the real server-assigned model's context window; catalog metadata is an adapter setting, not a hardware/model guarantee.
 
 The adapter rejects malformed output before emitting tool calls. A confirmed completed job with invalid output can receive up to two correction jobs with the original task, catalog and actual tool results retained. Raw rejected text is not replayed; HTTP submission/poll failures are not resubmitted by this path. Repeated invalid output ends with an explicit failure and inspectable job ID. Exact observed generic provider error answers follow the same path; specific blockers/refusals remain final text. SSE keepalives continue during correction.

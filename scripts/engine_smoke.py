@@ -109,6 +109,18 @@ def main():
         if not (workspace / 'generated.txt').is_file() or (workspace / 'generated.txt').read_text().strip() != 'PATCH_OK':
             raise JvError('The custom apply_patch tool did not create the expected file')
         checks['real_resume_and_custom_apply_patch'] = True
+        def labeled(value):
+            return 'JSON\n\n```\n' + json.dumps(value) + '\n```'
+        framed_patch = '*** Begin Patch\n*** Add File: framed.py\n+value = "__literal__"\n*** End Patch'
+        thread = run_case(engine, session, 'labeled JSON patch and tool result', [
+            (labeled({'type':'custom_tool_call','name':'apply_patch','input':framed_patch}), None),
+            (labeled({'type':'tool_call','name':'shell_command','arguments':{
+                'command': "python3 -B -c 'from framed import value; print(value)'"} }), None),
+            (labeled({'type':'final','text':'FRAMED_PATCH_OK'}), '__literal__')
+        ], thread_id=thread)
+        if (workspace / 'framed.py').read_text() != 'value = "__literal__"\n':
+            raise JvError('The labeled code block did not preserve patch contents')
+        checks['labeled_json_patch_and_tool_result'] = True
         malformed_patch = '{"type":"custom_tool_call","name":"apply_patch","input":"*** Begin Patch'
         thread = run_case(engine, session, 'recover a malformed patch after a successful tool', [
             ({'type':'tool_call','name':'shell_command','arguments':{'command':'cat smoke.txt'}}, None),

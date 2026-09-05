@@ -198,6 +198,8 @@ If `jvcli` is not found, add `$HOME/.local/bin` to the current shell's `PATH`. I
 
 If a completed model job returns malformed tool JSON or a known generic error answer, JV CLI requests up to two corrected responses before stopping with the job ID. No rejected tool call executes. Corrections can consume additional quota and cannot guarantee model quality; `--allow-network` only changes tool networking, not response formatting.
 
+The model's server environment is separate from your PC. Your workspace does not need to be mounted on that server. The bridge explicitly delegates tools to the client and requests protected JSON code blocks. If an older session claims your existing project is unavailable, update and start a fresh session; do not change paths or weaken sandboxing.
+
 ## Development
 
 Use portable mode or run `./jvcli` directly from the repository. Generated state, runtime, caches, backups, build output, local environment files, and Python bytecode are ignored.

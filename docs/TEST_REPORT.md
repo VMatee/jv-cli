@@ -1,10 +1,10 @@
 # JV CLI 0.3.0 test report
 
-Date: 2026-09-05. Version remains 0.3.0. Status: **local adapter/tool checks passed; live JV coding retry still required**.
+Date: 2026-09-05. Version remains 0.3.0. Status: **local validation passed; the client-context/protected-JSON candidate also completed a live Flask task**.
 
 ## Release preparation evidence
 
-The suite contains **172 tests: 171 passed, one skipped, zero failed**, on Linux with Python 3.10.12. It retains the earlier 147 cases and adds 23 response-format/recovery cases plus two end-to-end recovery/logout/session-metadata cases. The skip intentionally requires Python 3.11's `tomllib`; generated configuration is also exercised through the real engine acceptance test.
+The suite contains **186 tests: 185 passed, one skipped, zero failed**, on Linux with Python 3.10.12. It retains all earlier 172 cases and adds 14 protected-JSON/language-badge, value-preservation, rejection, prompt and SSE regressions. The skip intentionally requires Python 3.11's `tomllib`; generated configuration is also exercised through the real engine acceptance test. New fixtures are synthetic public examples, not captured private API responses.
 
 Coverage includes:
 
@@ -18,10 +18,11 @@ Coverage includes:
 - portable isolation, PATH idempotence, guarded uninstall, and state-preserving upgrade
 - deterministic archive naming, checksum creation, private/generated exclusions, canonical VERSION, and bootstrap checksum rejection
 
-The real `@openai/codex@0.149.1` engine smoke test passed all eight default checks and the optional Flask check:
+The real `@openai/codex@0.149.1` engine smoke test passed all nine default checks and the optional Flask check:
 
 - `real_shell_execution_and_tool_result`
 - `real_resume_and_custom_apply_patch`
+- `labeled_json_patch_and_tool_result`
 - `malformed_response_recovery_and_tool_result`
 - `generic_provider_error_recovery`
 - `repeated_invalid_response_fails_without_execution`
@@ -46,11 +47,23 @@ A default install from that extracted archive used a fresh temporary HOME. It do
 
 The archive inventory was inspected and contained no `.state/`, `.cache/`, `runtime/`, `.backups/`, `dist/`, local environment files, bytecode, credentials, or session data.
 
-## Live-service limitation
+## Live-service diagnosis and acceptance
 
-The user's supplied live transcript demonstrated successful authentication, a successful direct `ask`, and a real shell command, followed by a malformed model tool response. A job can report `succeeded` while its answer is unusable for coding. The exact rejected raw answer was not available locally, so regressions cover representative malformed replies and the exact two reported generic error messages, not a claimed replay of that raw payload.
+With user-authorized authentication, live diagnostics reproduced the old behavior: the model claimed a client workspace was absent without a supporting local tool result. Explicitly distinguishing the external client from the API server allowed a real local marker read. The old client still rejected all three file-writing replies in a Flask attempt.
 
-No live JV job was submitted during this fix. Authentication requires the user's private password and live jobs can consume quota. Offline success proves the recovery/tool path with controlled replies, not that the server-assigned model will now reliably complete the user's Flask task. A fresh live coding session remains required.
+Completed-job inspection and a controlled round-trip probe found Markdown-like damage to unfenced JSON: escaped array brackets/patch markers, double-underscore Python names converted to bold markers, and lost quote escaping. A requested code block preserved the JSON and code exactly but arrived with a standalone JSON language badge before the fence. The candidate accepted only that narrow wrapper; no damaged code was guessed or rewritten. The internal server component responsible for the presentation conversion was not inspected.
+
+The same prompt/parser behavior now applied to the project was first tested in a temporary candidate using the live JV API and real pinned engine. An ordinary Flask task completed with **seven model jobs, zero response corrections, exit code 0**:
+
+- local tools created app.py, templates/index.html, static/style.css and requirements.txt;
+- Flask 3.1.3 was installed into the disposable project's .venv, not globally;
+- all six agent test_client checks passed: page status, expected text, CSS link, CSS status, animation and reduced-motion support;
+- an independent real HTTP test on a temporary 127.0.0.1 port confirmed the page and CSS responses, and shut down the server;
+- a preexisting marker file was unchanged, and the user's original project was not edited.
+
+Credentials were entered through hidden prompts, not included in source, command arguments, public fixtures or reports. The diagnostic sequence used 16 model jobs across the baseline, comparison probes and successful candidate; packaging/regression checks used no additional live jobs. Session/job identifiers and private responses are excluded from this public report.
+
+This is evidence for one successful live task, not certification of every server-assigned model, every task, or all future replies. A valid final explanation and exit code 0 can still misdescribe a task; actual tool results and deliverable tests remain important. Start a fresh session after updating rather than continuing a history with mistaken environment claims.
 
 The workflow targets Python 3.10 through 3.13. Hosted CI results are separate post-push evidence, not part of these local results.
 

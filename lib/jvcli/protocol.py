@@ -12,7 +12,8 @@ MAX_PROMPT_BYTES = 96 * 1024
 MAX_CALLS = 8
 MAX_RESPONSE_REPAIRS = 2
 RESPONSE_CONTRACT = r'''RESPONSE CONTRACT:
-Return exactly one JSON object, without Markdown fences or surrounding commentary.
+Return exactly one JSON object inside one fenced code block labeled json, without surrounding commentary.
+Keep all JSON punctuation, backslash escapes, underscores, indentation and patch markers literal inside that code block.
 Final answer: {"type":"final","text":"your answer"}
 Function tool: {"type":"tool_call","name":"EXACT_NAME","arguments":{}}
 Namespaced tool: {"type":"tool_call","namespace":"EXACT_NAMESPACE","name":"EXACT_NAME","arguments":{}}
@@ -29,6 +30,10 @@ If you cannot complete a task, explain the concrete blocker in a final answer.
 When the task is finished, return a final answer.
 '''
 BASE_AGENT_INSTRUCTIONS = '''You are JV CLI, a software-engineering agent in the user's selected workspace.
+You generate protocol messages for an external JV CLI client on a DIFFERENT computer from this API inference environment.
+AVAILABLE TOOLS describes delegated tools on that client, not native tools in your server environment.
+Do not call server-side/native tools or search the server filesystem for client paths. Return a JSON tool envelope as answer text for JV CLI to execute on the client.
+Client paths do not need to be mounted on the server. Use the actual client tool results provided in the conversation; a missing path in your own environment is not evidence that the client workspace is missing.
 Only the local host executes tools. Never claim a command ran, a file changed, or a test passed without a confirming tool result.
 Work only in the selected project. Do not change global packages, shell profiles, other projects, or system services.
 Use a project-local .venv for Python dependencies. Do not use sudo. Do not bypass sandbox restrictions.
@@ -309,6 +314,14 @@ def _normalize_protocol_obj(obj: dict) -> dict:
 
 def _json_candidate(text: str) -> dict | None:
     stripped = text.strip()
+    # The JV service may serialize the code-block language badge as a separate
+    # JSON line. Accept only that exact label followed by one whole fenced block;
+    # never extract commands from arbitrary prose or rewrite code contents.
+    labeled = re.fullmatch(
+        r'JSON[ \t]*\r?\n[ \t\r\n]*(```(?:json)?[ \t]*\r?\n.*?\r?\n```)',
+        stripped, flags=re.S | re.I)
+    if labeled:
+        stripped = labeled.group(1)
     fence = re.fullmatch(r'```(?:json)?\s*\n?(.*?)\n?```', stripped, flags=re.S | re.I)
     if fence:
         stripped = fence.group(1).strip()
