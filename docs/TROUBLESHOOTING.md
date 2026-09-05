@@ -40,7 +40,7 @@ If final text literally contains `\n`, this can be a double-escaped model respon
 
 ## Generic error answer even though the JV job succeeded
 
-The API's `succeeded` status means it completed a job, not that the coding task succeeded. The two observed generic responses beginning “I'm having a hard time fulfilling your request” and “I encountered an error doing what you asked” now use the same bounded correction path instead of counting as a successful coding turn. Specific explanations or refusals are still delivered normally.
+The API's `succeeded` status means it completed a job, not that the coding task succeeded. The exact observed generic responses beginning “I'm having a hard time fulfilling your request”, “I encountered an error doing what you asked”, and “Sorry, something went wrong” use the same bounded correction path instead of counting as a successful coding turn. Specific explanations or refusals are still delivered normally.
 
 If `jvcli ask "Reply with exactly: JV API OK"` works but coding fails, authentication/basic inference are working; structured tool output can still fail. `--allow-network` permits tool downloads, but does not repair model JSON. Use a fresh coding session after updating; inspect the final reported job if corrections are exhausted.
 
@@ -67,6 +67,10 @@ If the server reports `waiting_for_auth` after login succeeds, the submitted job
 Do not automatically retry. A job can have been created even if the response was lost or malformed. If an ID is available use `jvcli job JOB_ID`; otherwise inspect the service/account through its normal interface. The API example does not establish an idempotency or cancellation endpoint this wrapper can safely invent.
 
 ## Sandbox / kernel / network errors
+
+Successful shell and patch results mean local tools are available even if a later verification command fails. The shared /tmp directory can be read-only: use the supplied TMPDIR or project-local temporary storage, not fixed /tmp log filenames. Respect command-policy rejections; do not bypass a rejected delete operation through a different interpreter.
+
+For Flask checks, prefer importing the app with the project's .venv Python and using app.test_client() with status/content assertions. This needs no background server, fixed port, log redirection or deletion. For an actual HTTP check, use an ephemeral localhost port, no debugger/reloader, and guaranteed shutdown. Do not disable the sandbox to make these tests pass.
 
 Run `python3 -B scripts/engine_smoke.py` as a normal user. Keep its `.state/engine-checks/.../report.json`. Do not disable the sandbox to force the test to pass. This build cannot certify arbitrary Ubuntu/kernel/container configurations.
 

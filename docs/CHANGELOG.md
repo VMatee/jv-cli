@@ -4,6 +4,9 @@ This is the first public GitHub release baseline.
 
 ## Protocol and tool handling
 
+- Added sandbox-aware Flask verification guidance: test_client by default, supplied TMPDIR instead of hard-coded shared /tmp paths, no force-delete cleanup, and bounded server lifecycle when real HTTP is needed.
+- Added the observed “Sorry, something went wrong” template to exact generic-error detection; concrete refusals remain normal final replies. Added three regressions.
+
 - Defaulted each model job's polling wait to five minutes, adjustable with JVCLI_WAIT_TIMEOUT. Derived the engine SSE idle budget from the job/correction budgets instead of the former two-minute cutoff; preserved the independent whole-turn deadline and disabled automatic submission retries.
 
 - Fixed client/server execution-context confusion by explicitly treating JV tools as delegated tools on the external user's PC, not native server tools.

@@ -87,6 +87,27 @@ class ResponseRecovery(unittest.TestCase):
         self.assertEqual(self.infer(runtime)[0]['type'], 'message')
         self.assertEqual(len(client.prompts), 1)
 
+    def test_reported_sorry_error_is_corrected_not_success(self):
+        runtime, client = self.runtime([
+            'Sorry, something went wrong. Please try your request again.', CALL])
+        self.assertEqual(self.infer(runtime)[0]['type'], 'function_call')
+        self.assertEqual(runtime.response_repairs, 1)
+        self.assertIn('ACTUAL_PRIOR_TOOL_RESULT', client.prompts[1])
+
+    def test_repeated_sorry_error_stops_without_executing_tools(self):
+        runtime, client = self.runtime([
+            'Sorry, something went wrong. Please try your request again.'] * 3)
+        with self.assertRaisesRegex(ProtocolError, 'job_3'):
+            self.infer(runtime)
+        self.assertEqual(runtime.signatures, {})
+        self.assertEqual(len(client.prompts), 3)
+
+    def test_web_verification_guidance_preserves_policy(self):
+        for required in ('app.test_client()', 'TMPDIR', 'debug/reloader disabled',
+                         'guaranteed shutdown in finally', 'do not evade it',
+                         'Validate tool exit status and assertions'):
+            self.assertIn(required, BASE_AGENT_INSTRUCTIONS)
+
     def test_repeated_invalid_output_stops_after_two_corrections(self):
         runtime, client = self.runtime([BAD, BAD, BAD, CALL])
         with self.assertRaisesRegex(ProtocolError, 'jvcli job job_3 --json'):

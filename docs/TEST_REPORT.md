@@ -4,7 +4,11 @@ Date: 2026-09-05. Version remains 0.3.0. Status: **local validation passed; the 
 
 ## Release preparation evidence
 
-The suite contains **189 tests: 188 passed, one skipped, zero failed**, on Linux with Python 3.10.12. It retains all earlier 186 cases and adds three timeout-default/configuration/validation regressions. The skip intentionally requires Python 3.11's `tomllib`; generated configuration is also exercised through the real engine acceptance test. New fixtures are synthetic public examples, not captured private API responses.
+The suite contains **192 tests: 191 passed, one skipped, zero failed**, on Linux with Python 3.10.12. It retains all earlier 189 cases and adds three sandbox-aware web-verification and generic-error regressions. The skip intentionally requires Python 3.11's `tomllib`; generated configuration is also exercised through the real engine acceptance test. New fixtures are synthetic public examples, not captured private API responses.
+
+A later user Flask run successfully edited the app and installed Flask but failed verification because a fixed /tmp log was read-only and a second compound command contained policy-rejected force deletion. The existing app passed a real-engine scripted read-only check using its own virtual environment and Flask test_client: HTTP 200, expected text and animation CSS. Its source hash was unchanged. The prompt now recommends this no-server verification path and explicitly respects deletion policy and supplied temporary-directory boundaries.
+
+A separate authenticated live JV run with the updated guidance also verified that existing app in read-only mode: the model issued the local test_client command, all three assertions passed, and it reported the confirming result. No server, log, cleanup command or project edit was needed. This verifies the focused web-check path, not every possible task or model reply.
 
 A separate delayed-response diagnostic against the real pinned engine confirmed that SSE comment heartbeats do not prevent its event-idle timeout: a one-second stream limit failed for a three-second fixture, while a six-second limit completed successfully. No live job was submitted by this diagnostic. The per-job polling default is now 300 seconds, configurable via JVCLI_WAIT_TIMEOUT, and the stream budget accommodates the initial job, two possible corrections and submission overhead. The whole-turn deadline remains independent. Longer local waiting does not resolve a server-side waiting_for_auth status.
 

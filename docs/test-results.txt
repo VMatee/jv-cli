@@ -1,6 +1,6 @@
 JV CLI 0.3.0 client-context/protected-JSON validation (2026-09-05)
 
-189 tests run: 188 passed, 1 skipped, 0 failed
+192 tests run: 191 passed, 1 skipped, 0 failed
 1 environment-specific test skipped on Python 3.10 (tomllib is Python 3.11+)
 Real pinned-engine acceptance: PASS (9/9 default checks)
 Optional generated Flask HTML/CSS test-client check: PASS (1/1)
@@ -12,5 +12,6 @@ Live JV Flask task with tested candidate behavior: PASS (7 model jobs, 0 correct
 Independent actual localhost HTTP verification: PASS; test server stopped
 Per-job timeout default: 300 seconds; configurable via JVCLI_WAIT_TIMEOUT
 Pinned-engine delayed-response diagnostic: short SSE deadline failed; longer deadline passed
+Existing user Flask app: real-engine read-only test_client check PASS; source unchanged
 
 See TEST_REPORT.md for scope, limitations, and the named engine checks.
