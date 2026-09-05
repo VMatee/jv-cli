@@ -51,7 +51,7 @@ class ScriptedClient:
 
 
 def run_case(engine, folder, name, steps, *, thread_id=None, read_only=False,
-             repairs=0, expected_error=None):
+             repairs=0, expected_error=None, expected_output=None):
     client = ScriptedClient(steps)
     runtime = AdapterRuntime(client, heartbeat=.5)
     output, errors = io.StringIO(), io.StringIO()
@@ -67,6 +67,8 @@ def run_case(engine, folder, name, steps, *, thread_id=None, read_only=False,
             expected_error in errors.getvalue())
         if not success or client.steps or runtime.response_repairs != repairs:
             raise JvError(f'{name} failed (exit {rc}):\n{errors.getvalue()[-5000:]}\n{output.getvalue()[-1000:]}')
+        if expected_output is not None and output.getvalue().strip() != expected_output:
+            raise JvError(f'{name}: final text did not match the decoded envelope')
         return thread
     finally:
         runtime.close()
@@ -121,6 +123,28 @@ def main():
         if (workspace / 'framed.py').read_text() != 'value = "__literal__"\n':
             raise JvError('The labeled code block did not preserve patch contents')
         checks['labeled_json_patch_and_tool_result'] = True
+        nested_example = 'Example only:\n```rust\nfn main() {}\n```'
+        run_case(engine, session, 'four-backtick final with nested code example', [
+            ('JSON\n\n````json\n' + json.dumps({'type': 'final', 'text': nested_example})
+             + '\n````', None)], expected_output=nested_example)
+        checks['long_fence_final_decoded_without_raw_json'] = True
+        # Function definitions make discovery deterministic and install nothing.
+        # No filesystem-wide search or external project toolchain is used.
+        probes = [
+            ({'type': 'tool_call', 'name': 'shell_command', 'arguments': {
+                'command': 'cargo() { return 127; }; cargo --version; '
+                           f'printf "PROBE_{index}"'}}, None)
+            for index in range(6)]
+        probes.append(({'type': 'tool_calls', 'calls': [
+            {'type': 'tool_call', 'name': 'shell_command', 'arguments': {
+                'command': 'touch discovery-must-not-run.txt'}},
+            {'type': 'tool_call', 'name': 'shell_command', 'arguments': {
+                'command': 'command -v cargo'}}]}, 'PROBE_5'))
+        run_case(engine, session, 'stop varied discovery without partial batch execution',
+                 probes, expected_error='Rust prerequisite discovery limit')
+        if (workspace / 'discovery-must-not-run.txt').exists():
+            raise JvError('SAFETY FAILURE: discovery-limit rejection executed part of a batch')
+        checks['discovery_loop_bounded_without_partial_execution'] = True
         malformed_patch = '{"type":"custom_tool_call","name":"apply_patch","input":"*** Begin Patch'
         thread = run_case(engine, session, 'recover a malformed patch after a successful tool', [
             ({'type':'tool_call','name':'shell_command','arguments':{'command':'cat smoke.txt'}}, None),

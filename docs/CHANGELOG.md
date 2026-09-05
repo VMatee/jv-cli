@@ -1,4 +1,15 @@
-# 0.3.0 changes from 0.2.3
+# Changelog
+
+## 0.3.1 — 2026-09-06
+
+- Decode matching JSON fences of three or more backticks, including a standalone JSON badge and nested code examples. Mismatched/truncated envelopes do not execute.
+- Add local, read-only `/permissions` and `/permission` interactive commands. Default network denial and sandbox policy are unchanged.
+- Bound recognized Rust-discovery loops to six probes per turn; reject an over-limit batch atomically. Preserve existing action and request limits and canonicalize JSON argument ordering for repeated-action detection.
+- Explain missing-tool blockers, per-command environment lifetime and explicit toolchain-installation authorization. Do not borrow another project's private tools.
+- Keep engine 0.149.1 and existing authentication, transport timeouts, runtime isolation and update behavior.
+- Add 17 automated cases (209 total, including one platform-dependent skip) and two real-engine acceptance cases. No Rust installation is performed by this release's validation.
+
+## 0.3.0 changes from 0.2.3
 
 This is the first public GitHub release baseline.
 

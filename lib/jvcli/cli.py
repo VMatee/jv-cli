@@ -544,7 +544,14 @@ def _run_session(prompt=None, *, resume=None, read_only=False, allow_network=Fal
                     if task in ('/exit', '/quit'):
                         return 0
                     if task == '/help':
-                        say('/new: start a new agent thread\n/status: show session and last job\n/exit: sign out and exit\nCtrl+C during a turn: stop local work and exit')
+                        say('/new: start a new agent thread\n/status: show session and last job\n/permissions (or /permission): show current workspace and network policy\n/exit: sign out and exit\nCtrl+C during a turn: stop local work and exit')
+                        continue
+                    if task in ('/permission', '/permissions'):
+                        say(f'Workspace: {workspace}\nSandbox: {"read-only" if read_only else "workspace-write"}\n'
+                            f'Tool network: {"enabled" if allow_network else "disabled"}\n'
+                            'Policy is fixed for this session; restart with --read-only or --allow-network to change it.\n'
+                            'No YOLO/sandbox-bypass mode. Network access does not authorize global installations.\n'
+                            'Installation and engine state are isolated; this is not a VM or a guarantee that other files cannot be read.')
                         continue
                     if task == '/status':
                         say(f'Session: {sid}\nThread: {thread_id or "new"}\nState: {runtime.status}\nLast JV job: {runtime.last_job_id or "none"}')

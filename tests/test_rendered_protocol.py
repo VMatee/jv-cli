@@ -57,6 +57,41 @@ class RenderedProtocolTests(unittest.TestCase):
                 self.assertEqual(parse_agent_output(raw, self.catalog)[0]['input'],
                                  '\n'.join(self.lines))
 
+    def test_long_fences_preserve_nested_code_examples(self):
+        text = 'Example:\n```rust\nfn main() { println!("__literal__"); }\n```'
+        value = {'type': 'final', 'text': text}
+        for length in (3, 4, 5, 12):
+            for label in ('', 'JSON\n\n'):
+                for newline in ('\n', '\r\n'):
+                    with self.subTest(length=length, label=label, newline=newline):
+                        fence = '`' * length
+                        raw = label + fence + 'json\n' + json.dumps(value) + '\n' + fence
+                        item = parse_agent_output(raw.replace('\n', newline), self.catalog)[0]
+                        self.assertEqual(item['content'][0]['text'], text)
+
+    def test_four_backtick_tools_preserve_arguments_and_patch(self):
+        for value in (self.call, self.patch):
+            raw = 'JSON\n\n````\n' + json.dumps(value) + '\n````'
+            item = parse_agent_output(raw, self.catalog)[0]
+            if value == self.call:
+                self.assertEqual(json.loads(item['arguments']), value['arguments'])
+            else:
+                self.assertEqual(item['input'], '\n'.join(self.lines))
+
+    def test_mismatched_fences_and_truncated_finals_fail_closed(self):
+        for end in ('```', '`````', ''):
+            for value in (self.call, {'type': 'final', 'text': 'done'}):
+                raw = 'JSON\n\n````json\n' + json.dumps(value) + '\n' + end
+                with self.subTest(end=end, value=value):
+                    with self.assertRaises(ProtocolError):
+                        parse_agent_output(raw, self.catalog)
+
+    def test_long_fence_still_rejects_multiple_blocks_and_prose(self):
+        raw = '````json\n' + json.dumps(self.call) + '\n````'
+        for value in ('Execute this:\n' + raw, raw + '\nExplanation',
+                      raw + '\n' + raw):
+            self.assert_no_tools(value)
+
     def test_plain_json_and_whole_fences_remain_compatible(self):
         for raw in (json.dumps(self.patch), framed(self.patch, ''),
                     framed(self.patch, '', 'json')):

@@ -36,6 +36,10 @@ Do not call server-side/native tools or search the server filesystem for client 
 Client paths do not need to be mounted on the server. Use the actual client tool results provided in the conversation; a missing path in your own environment is not evidence that the client workspace is missing.
 Only the local host executes tools. Never claim a command ran, a file changed, or a test passed without a confirming tool result.
 Work only in the selected project. Do not change global packages, shell profiles, other projects, or system services.
+Check prerequisites with a bounded command -v and version check. If a compiler is missing, report that concrete blocker and finish any source-only work that is possible.
+Do not repeatedly search /, /home, /usr or /opt for compilers, and do not borrow another project's private toolchain. Network permission is not permission to install a toolchain.
+Do not install Rust or other system toolchains without an explicit user request. If the user declines installation, stop discovery and explain that compilation was not tested.
+Shell exports do not persist between tool calls. For an explicitly authorized toolchain, preserve its required environment on each command; a rustup shim alone does not establish a configured toolchain.
 Use a project-local .venv for Python dependencies. Do not use sudo. Do not bypass sandbox restrictions.
 For a requested local web app, bind to 127.0.0.1, avoid occupied ports, and report verification and shutdown steps honestly.
 For Flask verification, prefer importing the app and using app.test_client() with assertions for HTTP status and expected HTML/CSS; this needs no background server, fixed port, log file, or process cleanup.
@@ -323,21 +327,20 @@ def _json_candidate(text: str) -> dict | None:
     # The JV service may serialize the code-block language badge as a separate
     # JSON line. Accept only that exact label followed by one whole fenced block;
     # never extract commands from arbitrary prose or rewrite code contents.
-    labeled = re.fullmatch(
-        r'JSON[ \t]*\r?\n[ \t\r\n]*(```(?:json)?[ \t]*\r?\n.*?\r?\n```)',
+    fence = re.fullmatch(
+        r'(?:JSON[ \t]*\r?\n[ \t\r\n]*)?'
+        r'(?P<fence>`{3,})(?:json)?[ \t]*\r?\n'
+        r'(?P<body>.*?)\r?\n(?P=fence)[ \t]*',
         stripped, flags=re.S | re.I)
-    if labeled:
-        stripped = labeled.group(1)
-    fence = re.fullmatch(r'```(?:json)?\s*\n?(.*?)\n?```', stripped, flags=re.S | re.I)
     if fence:
-        stripped = fence.group(1).strip()
+        stripped = fence.group('body').strip()
     try:
         value = strict_json(stripped)
     except (ValueError, UnicodeError, RecursionError):
         try:
             value = strict_json(_repair_json_escapes(stripped))
         except (ValueError, UnicodeError, RecursionError):
-            if stripped.startswith('{') or re.search(r'"type"\s*:\s*"(?:tool|function|custom)', stripped):
+            if stripped.startswith('{') or re.search(r'"type"\s*:\s*"(?:final|tool|function|custom)', stripped):
                 raise ProtocolError('Malformed model tool JSON; no tool was executed') from None
             return None
     if not isinstance(value, dict):

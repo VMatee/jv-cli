@@ -5,6 +5,7 @@ import hashlib
 import json
 import queue
 import secrets
+import shlex
 import socket
 import threading
 import time
@@ -18,6 +19,50 @@ from .transport import DEFAULT_BASE_URL, MAX_JSON_BYTES, JvApiClient, JvClientCo
 from .protocol import (MAX_PROMPT_BYTES, build_jv_prompt, flatten_tools, parse_agent_output,
                        render_input_item, sanitize_internal_text, MAX_RESPONSE_REPAIRS,
                        provider_failure, response_repair_prompt)
+
+MAX_RUST_DISCOVERY_PROBES = 6
+
+
+def rust_discovery_probe(command: str) -> bool:
+    """Recognize common discovery loops, not a shell security boundary.
+
+    Never rewrite/execute shell text. Build, run, check and source edits do not
+    count. Quoted scripts/heredocs are deliberately not recursively interpreted.
+    """
+    if '<<' in command:
+        return False
+    try:
+        lexer = shlex.shlex(command.replace('\n', ' ; '), posix=True,
+                            punctuation_chars=';&|()')
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return False
+    segments = [[]]
+    for token in tokens:
+        if token and all(char in ';&|()' for char in token):
+            segments.append([])
+        else:
+            segments[-1].append(token)
+    names = {'cargo', 'rustc', 'rustup'}
+    for words in segments:
+        while words and '=' in words[0] and not words[0].startswith('-'):
+            words = words[1:]
+        if not words:
+            continue
+        head, args = words[0], words[1:]
+        if head in ('which', 'type') or (head == 'command' and '-v' in args):
+            if names.intersection(args):
+                return True
+        if head in names and any(arg in ('--version', '-V') for arg in args):
+            return True
+        if head == 'rustup' and (args[:1] == ['show'] or args[:2] == ['toolchain', 'list']):
+            return True
+        if head == 'find' and any(
+                arg in ('-name', '-iname') and args[i + 1] in names
+                for i, arg in enumerate(args[:-1])):
+            return True
+    return False
 
 
 class AdapterRuntime:
@@ -37,6 +82,7 @@ class AdapterRuntime:
         self.last_job_id: str | None = None
         self.last_error: str | None = None
         self.signatures: dict[str, int] = {}
+        self.rust_discovery_probes = 0
         self.worker: threading.Thread | None = None
         self.notices = queue.SimpleQueue()
         self.response_repairs = 0
@@ -46,6 +92,7 @@ class AdapterRuntime:
             raise JvError('A previous model request is still stopping; exit and restart rather than duplicating it')
         self.requests = 0
         self.signatures = {}
+        self.rust_discovery_probes = 0
         self.last_error = None
         self.last_job_id = None
         self.response_repairs = 0
@@ -137,14 +184,32 @@ class AdapterRuntime:
                 if item['type'] == 'message':
                     item['content'][0]['text'] += note
                     break
-        # Bound stuck models: three identical actions are allowed; a fourth stops.
+        # Validate the whole batch before committing counters or emitting tools.
+        # Changing whitespace, search roots or PATH must not permit the observed
+        # Rust discovery loop to consume the entire turn's model budget.
+        signatures = self.signatures.copy()
+        probes = self.rust_discovery_probes
         for item in items:
             if item['type'] not in ('function_call', 'custom_tool_call'):
                 continue
-            signature = hashlib.sha256(json.dumps({k: item.get(k) for k in ('type', 'name', 'namespace', 'arguments', 'input')}, sort_keys=True).encode()).hexdigest()
-            self.signatures[signature] = self.signatures.get(signature, 0) + 1
-            if self.signatures[signature] > 3:
+            action = {k: item.get(k) for k in ('type', 'name', 'namespace', 'arguments', 'input')}
+            if item['type'] == 'function_call':
+                action['arguments'] = strict_json(item['arguments'])
+                if item['name'] == 'shell_command':
+                    probes += int(rust_discovery_probe(action['arguments'].get('command', '')))
+            signature = hashlib.sha256(json.dumps(action, sort_keys=True).encode()).hexdigest()
+            signatures[signature] = signatures.get(signature, 0) + 1
+            if signatures[signature] > 3:
                 raise ProtocolError('Model repeated the same tool action four times; stopped to prevent a loop')
+            if probes > MAX_RUST_DISCOVERY_PROBES:
+                raise ProtocolError(
+                    'Rust prerequisite discovery limit reached (6 probes per turn). '
+                    'Stopped repeated compiler searches; no tools from this response were executed. '
+                    'Rust availability is unresolved: no installation was performed by this guard. '
+                    'Use /new for source-only work or explicitly provide an authorized toolchain; '
+                    'do not borrow another project\'s private tools.')
+        self.signatures = signatures
+        self.rust_discovery_probes = probes
         self.status = 'model response received'
         return items
 

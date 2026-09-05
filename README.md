@@ -93,7 +93,7 @@ The working directory selected when `jvcli` starts is the workspace. Normal writ
 
 ## Interactive Mode
 
-Run `jvcli` from a dedicated project directory. Interactive commands include `/help`, `/status`, `/new`, and `/exit`. Saved sessions use separate engine homes and locks. Resume requires the same workspace, username, and API origin.
+Run `jvcli` from a dedicated project directory. Interactive commands include `/help`, `/status`, `/permissions` (alias `/permission`), `/new`, and `/exit`. Permission status is local and read-only: it shows the selected workspace, sandbox and tool-network policy without submitting a model job. Restart with the appropriate flags to change policy; there is no YOLO/sandbox-bypass mode. Saved sessions use separate engine homes and locks. Resume requires the same workspace, username, and API origin.
 
 ## One-shot Exec
 
@@ -197,6 +197,10 @@ jvcli auth status
 If `jvcli` is not found, add `$HOME/.local/bin` to the current shell's `PATH`. If the engine is absent or mismatched, rerun `./install.sh` from a trusted clone or the installed `install.sh`. Do not install an unrelated similarly named system package. See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
 If a completed model job returns malformed tool JSON or a known generic error answer, JV CLI requests up to two corrected responses before stopping with the job ID. No rejected tool call executes. Corrections can consume additional quota and cannot guarantee model quality; `--allow-network` only changes tool networking, not response formatting.
+
+Missing Rust is a prerequisite issue, not evidence that shell/patch tools are unavailable. JV CLI can still prepare source files, but cannot claim compilation passed without a working compiler. Its model instructions prohibit borrowing another project's private toolchain and require explicit user authorization for toolchain installation; network access alone is not authorization. These instructions are guidance, not an additional filesystem security boundary.
+
+To bound the observed compiler-search loop, the adapter allows at most six recognized Rust discovery actions per turn (for example `which cargo`, `cargo --version`, or `find … -name cargo`). A seventh stops with an actionable error before any tool in that response runs. Builds, tests and source edits do not count toward this discovery budget. This conservative heuristic does not recognize every possible shell spelling; the general repeated-action and model-request limits still apply. Use `/new` for a source-only task after stopping a stuck turn, not to repeatedly retry missing prerequisites. Shell exports do not persist between tool calls.
 
 The model's server environment is separate from your PC. Your workspace does not need to be mounted on that server. The bridge explicitly delegates tools to the client and requests protected JSON code blocks. If an older session claims your existing project is unavailable, update and start a fresh session; do not change paths or weaken sandboxing.
 

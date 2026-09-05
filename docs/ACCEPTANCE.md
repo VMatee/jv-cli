@@ -14,7 +14,7 @@ $HOME/.local/bin/jvcli doctor --json
 ./test.sh
 ```
 
-Expected package version: `0.3.0`. Expected engine: `0.149.1`. `doctor` checks local configuration/version/help, not live authentication or tool execution. `test.sh` uses only loopback mock services and fake engine scripts, not real credentials.
+Expected package version: `0.3.1`. Expected engine: `0.149.1`. `doctor` checks local configuration/version/help, not live authentication or tool execution. `test.sh` uses only loopback mock services and fake engine scripts, not real credentials.
 
 The installer must not require sudo or create a global executable. It creates only the per-user application and launcher paths. It reports a missing `~/.local/bin` PATH entry and changes `~/.bashrc` only with explicit `--add-path`.
 
@@ -38,7 +38,7 @@ The script passed against 0.149.1 during release preparation. Keep a fresh repor
 
 It also exercises malformed-response correction after a real shell tool, generic-error recovery, and repeated invalid batches that must fail without executing even their valid member. Optionally pass `--flask-python /absolute/path/to/disposable/venv/bin/python` with Flask already installed to create a small Flask app through the real patch tool and verify its HTML/CSS with Flask's test client. This optional check installs nothing and starts no persistent server. Scripted replies do not establish live-model compatibility.
 
-The default checks also exercise a standalone JSON label followed by a fenced patch, shell call and final response through the real engine. Patch contents and subsequent tool output must retain their literal underscores and quotes. See TEST_REPORT.md for the separate live Flask test and its limits.
+The default checks also exercise a standalone JSON label followed by a fenced patch, shell call and final response through the real engine, including four-backtick fences around nested code examples. Patch contents and subsequent tool output must retain their literal underscores and quotes. A simulated missing-Rust loop must stop before executing any member of its final rejected batch. This check uses shell functions, installs no compiler and never searches other projects. See TEST_REPORT.md for the separate historical live Flask test and its limits.
 
 ## 3. Live API contract
 

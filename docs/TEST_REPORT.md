@@ -1,4 +1,16 @@
-# JV CLI 0.3.0 test report
+# JV CLI test report
+
+## 0.3.1 validation — 2026-09-06
+
+The automated suite completed 209 cases: 208 passed, one skipped (Python 3.10 lacks tomllib), zero failed. Seventeen new cases cover longer/mismatched JSON fences, preservation of nested code examples and patch contents, varied Rust-discovery probes, atomic batch and SSE rejection, per-turn reset, canonical repeated-action signatures, legitimate build/source-only outcomes, and both permission aliases under three policies in a pseudo-terminal.
+
+All eleven default real-engine acceptance checks passed with the unchanged 0.149.1 engine. The two new checks decode a four-backtick final through the engine and simulate six missing-compiler probes, then verify that a seventh probe stops without executing any member of its batch. The existing shell, patch, resume, response-repair, outside-workspace write denial, read-only denial and tool-network denial cases remain passing.
+
+This patch's tests used loopback scripted responses, not the live JV API. No Rust compiler was installed, no other project's toolchain was used, and the user's demo project was not modified. The discovery guard is a bounded heuristic, not a complete shell analyzer or a new filesystem sandbox. Prompt guidance cannot guarantee that every live model follows instructions; a missing compiler still prevents compilation.
+
+The 0.3.1 source archive passed manifest and SHA-256 verification and was extracted into a fresh temporary directory. A default installation from that archive into a fresh temporary HOME installed engine 0.149.1 locally; the installed version command, all five doctor checks and installed manifest verification passed. The archive inventory contains public sources, tests, documentation and attribution, not runtime modules, local state, credentials or caches. Two final builds must remain byte-identical before publication.
+
+## Historical 0.3.0 evidence
 
 Date: 2026-09-05. Version remains 0.3.0. Status: **local validation passed; the client-context/protected-JSON candidate also completed a live Flask task**.
 
