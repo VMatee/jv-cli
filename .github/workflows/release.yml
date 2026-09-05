@@ -1,0 +1,47 @@
+name: JV CLI release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check tag and canonical version
+        run: test "v$(cat VERSION)" = "$GITHUB_REF_NAME"
+      - name: Run complete tests
+        run: ./test.sh
+      - name: Verify package source
+        run: ./verify.sh
+      - name: Install pinned engine in portable mode
+        run: ./install.sh --portable
+      - name: Run real engine acceptance
+        run: python3 -B scripts/engine_smoke.py
+      - name: Build release
+        run: ./scripts/build-release.sh
+      - name: Verify checksum
+        run: cd dist && sha256sum -c "jv-cli-$(cat ../VERSION)-linux-x86_64.zip.sha256"
+      - name: Verify extracted release
+        run: |
+          directory=$(mktemp -d)
+          unzip -q "dist/jv-cli-$(cat VERSION)-linux-x86_64.zip" -d "$directory"
+          "$directory/jv-cli/verify.sh"
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(cat VERSION)
+          assets=(
+            "dist/jv-cli-$version-linux-x86_64.zip"
+            "dist/jv-cli-$version-linux-x86_64.zip.sha256"
+          )
+          gh release create "$GITHUB_REF_NAME" "${assets[@]}" --verify-tag --generate-notes --title "JV CLI $version"

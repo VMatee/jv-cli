@@ -1,0 +1,11 @@
+JV CLI 0.3.0 release-preparation summary (2026-09-05)
+
+144 tests run: PASS
+1 environment-specific test skipped on Python 3.10 (tomllib is Python 3.11+)
+Real pinned-engine acceptance: PASS (5/5)
+Package manifest verification: PASS
+Deterministic release build: PASS
+Extracted release verification: PASS
+Fresh temporary-HOME install, version, and doctor: PASS
+
+See TEST_REPORT.md for scope, limitations, and the named engine checks.

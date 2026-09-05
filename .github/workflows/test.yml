@@ -1,0 +1,21 @@
+name: JV CLI regression tests
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  offline-tests:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -B -m unittest discover -s tests -v
+      - run: bash -n activate.sh && sh -n install.sh upgrade.sh verify.sh test.sh uninstall.sh jvcli scripts/build-release.sh scripts/install-from-github.sh
+      - run: ./verify.sh
+      - run: ./scripts/build-release.sh

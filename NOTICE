@@ -1,0 +1,10 @@
+JV CLI
+Independent launcher and JV API compatibility adapter.
+
+The locally installed agent engine is the open-source OpenAI Codex project.
+Original upstream license and NOTICE files are retained in third_party/openai-codex/.
+This package is not affiliated with or endorsed by OpenAI.
+
+JV CLI 0.3.0 changes the launcher, adapter, installation scripts,
+tests and documentation from the previous JV CLI 0.2.3 package.
+It does not contain a modified or recompiled Codex Rust source tree.
