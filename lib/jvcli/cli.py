@@ -442,10 +442,14 @@ def _run_engine(engine, prompt, thread_id, *, session_dir=None, overrides=(), ru
 
 def _workspace_check(path):
     path = path.resolve()
-    if path == Path('/') or path == Path.home().resolve() or path == APP_ROOT or path in APP_ROOT.parents:
+    user_home = Path.home().resolve()
+    if path == Path('/') or path == user_home or path == APP_ROOT or path in APP_ROOT.parents:
         raise JvError('Choose a dedicated project directory, not your home, filesystem root, or the JV CLI installation')
-    # Never silently activate repo-supplied hooks/MCP/config from an untrusted ZIP.
+    # JV CLI provides a private CODEX_HOME, so ~/.codex is neither loaded nor
+    # modified. Still reject configuration belonging to the selected project.
     for parent in (path, *path.parents):
+        if parent == user_home or parent == Path('/'):
+            continue
         if (parent / '.codex/config.toml').exists():
             raise JvError(f'Existing agent project config found at {parent / ".codex/config.toml"}. Review it and use a clean test copy; this release does not load custom project engine config')
     return path

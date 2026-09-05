@@ -30,6 +30,7 @@ This is the first public GitHub release baseline.
 - Preserved fully isolated `--portable` setup and terminal-scoped activation.
 - Added opt-in, idempotent `--add-path`, guarded uninstall, deterministic ZIP/checksum packaging, checksum-first GitHub bootstrap installation, and release-tag automation.
 - Added mandatory acceptance guidance, offline regression tests, real-engine scripted test, opt-in live API smoke test, and CI configuration.
+- Corrected project-config detection so a personal `~/.codex/config.toml` is ignored while project-local configurations remain blocked.
 
 ## Migration and remaining limitations
 

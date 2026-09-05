@@ -4,7 +4,7 @@ Date: 2026-09-05. Status: **stable release candidate passed local publication ga
 
 ## Release preparation evidence
 
-The final suite contains **144 tests** covering the original 132 cases plus 12 public-install/release cases. It passed on Linux with Python 3.10.12. One test that intentionally requires Python 3.11's `tomllib` was skipped; the generated configuration is exercised through the real engine acceptance test.
+The final suite contains **147 tests** covering the original 132 cases, 12 public-install/release cases, and three personal-Codex-isolation regressions. It passed on Linux with Python 3.10.12. One test that intentionally requires Python 3.11's `tomllib` was skipped; the generated configuration is exercised through the real engine acceptance test.
 
 Coverage includes:
 
@@ -12,6 +12,7 @@ Coverage includes:
 - Responses adapter validation, SSE lifecycle, tool envelopes, limits, and malformed output
 - hidden password handling, credential/environment filtering, redaction, and private state
 - engine subprocess behavior, resume flags, JSONL output, locks, and timeout/failure handling
+- personal `~/.codex/config.toml` isolation while project-local agent configuration remains blocked
 - normal temporary-HOME installation and launcher behavior
 - portable isolation, PATH idempotence, guarded uninstall, and state-preserving upgrade
 - deterministic archive naming, checksum creation, private/generated exclusions, canonical VERSION, and bootstrap checksum rejection

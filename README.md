@@ -114,7 +114,7 @@ Read-only mode requests an engine-enforced read-only sandbox. Tool network acces
 
 ## Project Isolation
 
-Application source, runtime, cache, engine configuration, and sessions remain under `$HOME/.local/share/jv-cli`. JV CLI uses a separate `CODEX_HOME` for each saved run and does not use `~/.codex` or a globally installed engine.
+Application source, runtime, cache, engine configuration, and sessions remain under `$HOME/.local/share/jv-cli`. JV CLI uses a separate `CODEX_HOME` for each saved run and does not read, write, or replace your personal `~/.codex` configuration or globally installed engine.
 
 Only the selected workspace receives normal workspace-write permission. Tests cover writes outside the workspace, read-only writes, and tool-network denial. This isolation is not a VM: the chosen project can be changed in write mode, and no claim is made that every user-readable file is unreadable. Use a dedicated OS account, container, or VM for stronger isolation.
 

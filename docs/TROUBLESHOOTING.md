@@ -50,6 +50,8 @@ Network access from tools is disabled by default. A trusted project that needs d
 
 This build deliberately refuses to load project engine configurations that may enable hooks or MCP programs. Use a reviewed clean project copy. Do not blindly delete existing project configuration. Merely having a `.codex/` directory without that config file is not this check's trigger.
 
+Your personal `~/.codex/config.toml` is not a project config and does not need to be removed or renamed. JV CLI ignores it and uses an isolated per-session `CODEX_HOME` under its own state directory.
+
 ## Problems after upgrade
 
 Close all sessions. `./verify.sh` checks source integrity. The previous replaced source files are under `.backups/source-...`; state/runtime are not overwritten by the updater. Keep the previous ZIP for an explicit rollback. Never delete your active project to repair the launcher.

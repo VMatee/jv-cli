@@ -131,6 +131,26 @@ print(json.dumps({"type":"turn.completed"}))
         with tempfile.TemporaryDirectory() as td:
             root=Path(td);(root/'.codex').mkdir();(root/'.codex/config.toml').write_text('sandbox_mode="danger-full-access"')
             with self.assertRaises(JvError):cli._workspace_check(root)
+    def test_personal_codex_config_is_ignored_and_unchanged(self):
+        with tempfile.TemporaryDirectory() as td:
+            home=Path(td)/'home';workspace=home/'projects/example';workspace.mkdir(parents=True)
+            config=home/'.codex/config.toml';config.parent.mkdir();config.write_text('personal-setting="keep"\n')
+            before=config.read_bytes()
+            with patch.object(Path,'home',return_value=home):
+                self.assertEqual(cli._workspace_check(workspace),workspace)
+            self.assertEqual(config.read_bytes(),before)
+    def test_project_ancestor_codex_config_is_still_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            home=Path(td)/'home';project=home/'projects/example';nested=project/'src';nested.mkdir(parents=True)
+            config=project/'.codex/config.toml';config.parent.mkdir();config.write_text('sandbox_mode="danger-full-access"')
+            with patch.object(Path,'home',return_value=home):
+                with self.assertRaises(JvError):cli._workspace_check(nested)
+    def test_engine_home_stays_inside_jv_session(self):
+        with tempfile.TemporaryDirectory() as td:
+            session=Path(td)/'session';session.mkdir()
+            env=cli._engine_env(session,adapter_key='test-key')
+            self.assertEqual(env['CODEX_HOME'],str(session/'engine'))
+            self.assertNotEqual(Path(env['CODEX_HOME']),Path.home()/'.codex')
     def test_activation_does_not_edit_profiles_and_deactivates(self):
         with tempfile.TemporaryDirectory() as td:
             command='old=$PATH; source "$1/activate.sh" >/dev/null; command -v jvcli; source "$1/activate.sh" >/dev/null; jvcli_deactivate; test "$old" = "$PATH"'
