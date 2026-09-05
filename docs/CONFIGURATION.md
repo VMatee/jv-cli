@@ -30,11 +30,19 @@ jvcli logout
 | `JVCLI_CODEX_BIN` | Optional explicit executable path; must report pinned version |
 | `JVCLI_POLL_INTERVAL` | 2 seconds |
 | `JVCLI_REQUEST_TIMEOUT` | 30 seconds per blocking network operation |
-| `JVCLI_WAIT_TIMEOUT` | 3600 seconds local job-polling deadline |
+| `JVCLI_WAIT_TIMEOUT` | 300 seconds (5 minutes) per model job's polling deadline |
 | `JVCLI_TURN_TIMEOUT` | 3600 seconds for a coding turn |
 | `JVCLI_MAX_REQUESTS` | 40 model requests per turn, maximum 500 |
 
 Time values must be finite and positive. Request socket timeouts are not a guarantee against every slow-response/OS scheduling condition; cancellation is best-effort for an already-blocked network operation.
+
+To change the per-call wait later, for example to ten minutes:
+
+```bash
+JVCLI_WAIT_TIMEOUT=600 jvcli --allow-network
+```
+
+The engine SSE deadline automatically accommodates the initial job plus up to two correction jobs and submission overhead. This prevents its former two-minute stream cutoff from preempting the job deadline. Each correction is a separate job with the same polling limit; the whole coding turn still has its independent `JVCLI_TURN_TIMEOUT`. A timeout stops local waiting, not the remote job. Server status `waiting_for_auth` requires server-side investigation; extra waiting cannot authenticate its provider.
 
 HTTPS is required except loopback HTTP. Base origins must not contain embedded credentials, query, fragment or API paths. `/v1/...` routes are added by the client. Ambient proxies are disabled. TLS certificate verification is not disabled; private deployments must arrange trusted certificates separately.
 

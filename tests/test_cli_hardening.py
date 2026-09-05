@@ -18,6 +18,30 @@ from jvcli.safety import JvError
 
 
 class CliHardening(unittest.TestCase):
+    def test_default_job_timeout_is_five_minutes(self):
+        from jvcli.transport import JvClientConfig
+        self.assertEqual(JvClientConfig().wait_timeout, 300)
+        with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {}, clear=True), patch.object(cli, 'STATE_DIR', Path(td)):
+            self.assertEqual(cli._new_client('http://127.0.0.1').config.wait_timeout, 300)
+
+    def test_job_timeout_and_stream_deadline_are_configurable(self):
+        for wait, request in [('300', '30'), ('600', '15')]:
+            with tempfile.TemporaryDirectory() as td, patch.dict(os.environ,
+                    {'JVCLI_WAIT_TIMEOUT': wait, 'JVCLI_REQUEST_TIMEOUT': request}, clear=True), patch.object(cli, 'STATE_DIR', Path(td)):
+                self.assertEqual(cli._new_client('http://127.0.0.1').config.wait_timeout, float(wait))
+                cli._write_engine_config(Path(td) / 'session', 12345)
+                config = (Path(td) / 'session/engine/config.toml').read_text()
+                expected = int((3 * (float(wait) + float(request)) + 30) * 1000)
+                self.assertIn('"stream_idle_timeout_ms" = ' + str(expected), config)
+                self.assertIn('"stream_max_retries" = 0', config)
+
+    def test_invalid_job_timeout_rejected_before_config_generation(self):
+        for value in ('0', '-1', 'nan', 'inf', 'invalid'):
+            with tempfile.TemporaryDirectory() as td, patch.dict(os.environ,
+                    {'JVCLI_WAIT_TIMEOUT': value}, clear=True):
+                with self.assertRaises(JvError):
+                    cli._write_engine_config(Path(td), 12345)
+
     def engine(self,td,body):
         file=Path(td)/'engine'
         file.write_text('#!/usr/bin/env python3\nimport sys,json,time,os\n'+body)

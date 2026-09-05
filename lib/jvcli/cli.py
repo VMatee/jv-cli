@@ -21,7 +21,7 @@ import uuid
 import warnings
 
 from .adapter import AdapterRuntime
-from .protocol import BASE_AGENT_INSTRUCTIONS
+from .protocol import BASE_AGENT_INSTRUCTIONS, MAX_RESPONSE_REPAIRS
 from .safety import (JvError, atomic_write, no_symlink_path, positive_number,
                      private_dir, read_private_json, redact, redact_data, strict_json, terminal_text)
 from .transport import DEFAULT_BASE_URL, JvApiClient, JvClientConfig, validate_base_url
@@ -93,7 +93,7 @@ def _password():
 def _new_client(base):
     return JvApiClient(JvClientConfig(base_url=base,
         poll_interval=positive_number(os.environ.get('JVCLI_POLL_INTERVAL', '2'), 'JVCLI_POLL_INTERVAL'),
-        wait_timeout=positive_number(os.environ.get('JVCLI_WAIT_TIMEOUT', '3600'), 'JVCLI_WAIT_TIMEOUT'),
+        wait_timeout=positive_number(os.environ.get('JVCLI_WAIT_TIMEOUT', '300'), 'JVCLI_WAIT_TIMEOUT'),
         request_timeout=positive_number(os.environ.get('JVCLI_REQUEST_TIMEOUT', '30'), 'JVCLI_REQUEST_TIMEOUT'),
         temp_dir=private_dir(STATE_DIR / 'tmp')))
 
@@ -190,6 +190,13 @@ def _model_catalog():
 
 
 def _write_engine_config(session_dir, port, read_only=False, allow_network=False):
+    # SSE comments do not reset the pinned engine's event-idle deadline.
+    # Leave room for the initial job plus two bounded correction jobs, their
+    # submissions, and delivery of the final response/error. Job/turn deadlines
+    # remain authoritative; increasing this does not extend an individual job.
+    wait_seconds = positive_number(os.environ.get('JVCLI_WAIT_TIMEOUT', '300'), 'JVCLI_WAIT_TIMEOUT')
+    request_seconds = positive_number(os.environ.get('JVCLI_REQUEST_TIMEOUT', '30'), 'JVCLI_REQUEST_TIMEOUT')
+    stream_idle_ms = int(((MAX_RESPONSE_REPAIRS + 1) * (wait_seconds + request_seconds) + 30) * 1000)
     engine_home = private_dir(session_dir / 'engine')
     tool_home = private_dir(session_dir / 'tool-home')
     tmp = private_dir(session_dir / 'tmp')
@@ -208,7 +215,7 @@ def _write_engine_config(session_dir, port, read_only=False, allow_network=False
         'model_providers': {'jv': {'name': 'JV LLM', 'base_url': f'http://127.0.0.1:{port}/v1',
             'wire_api': 'responses', 'requires_openai_auth': False, 'supports_websockets': False,
             'env_key': 'JVCLI_ADAPTER_KEY', 'request_max_retries': 0, 'stream_max_retries': 0,
-            'stream_idle_timeout_ms': 120000}},
+            'stream_idle_timeout_ms': stream_idle_ms}},
         'sandbox_workspace_write': {'network_access': bool(allow_network), 'exclude_slash_tmp': True,
             'exclude_tmpdir_env_var': False, 'writable_roots': [str(tool_home)]},
         'shell_environment_policy': {'inherit': 'core', 'ignore_default_excludes': False,

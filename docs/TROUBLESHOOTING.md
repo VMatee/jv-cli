@@ -58,7 +58,9 @@ An initialized repository with no commit makes `git log` fail. It is not necessa
 
 ## Waiting after a tool completes
 
-The next model job may still be queued/running. The launcher prints waiting status periodically; the SSE adapter sends keepalives. Default local wait and turn limits are one hour. Interrupting may leave a server job running. Check `/status` or the saved last job ID before resubmitting.
+The next model job may still be queued/running. The launcher prints waiting status periodically; the SSE adapter sends keepalives. The default per-job polling limit is five minutes; the whole coding turn is limited to one hour. Change the job limit with `JVCLI_WAIT_TIMEOUT=600 jvcli` for ten minutes. The engine SSE deadline is derived from the job budgets because comment keepalives do not reset its event-idle timer. Interrupting may leave a server job running. Check `/status` or the saved last job ID before resubmitting.
+
+If the server reports `waiting_for_auth` after login succeeds, the submitted job is awaiting a server-side authentication step. Increasing a local timeout does not resolve that state. Inspect the existing job and have the server operator check provider authentication instead of creating duplicate tasks.
 
 ## Ambiguous job submission
 

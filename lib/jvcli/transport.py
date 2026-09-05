@@ -112,7 +112,7 @@ class JvClientConfig:
     base_url: str = DEFAULT_BASE_URL
     request_timeout: float = 30.0
     poll_interval: float = 2.0
-    wait_timeout: float = 3600.0
+    wait_timeout: float = 300.0
     max_poll_errors: int = 8
     temp_dir: Path | None = None
 

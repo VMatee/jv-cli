@@ -4,6 +4,8 @@ This is the first public GitHub release baseline.
 
 ## Protocol and tool handling
 
+- Defaulted each model job's polling wait to five minutes, adjustable with JVCLI_WAIT_TIMEOUT. Derived the engine SSE idle budget from the job/correction budgets instead of the former two-minute cutoff; preserved the independent whole-turn deadline and disabled automatic submission retries.
+
 - Fixed client/server execution-context confusion by explicitly treating JV tools as delegated tools on the external user's PC, not native server tools.
 - Requested fenced JSON to protect code from the service's observed Markdown-like formatting; accepted the standalone JSON language badge before one complete fenced block without rewriting code.
 - Verified the candidate against the live JV API: local Flask file creation, project-local dependency installation and six application checks succeeded in seven model jobs with zero corrections. Independent localhost HTTP checks also passed; no server was left running.

@@ -4,7 +4,9 @@ Date: 2026-09-05. Version remains 0.3.0. Status: **local validation passed; the 
 
 ## Release preparation evidence
 
-The suite contains **186 tests: 185 passed, one skipped, zero failed**, on Linux with Python 3.10.12. It retains all earlier 172 cases and adds 14 protected-JSON/language-badge, value-preservation, rejection, prompt and SSE regressions. The skip intentionally requires Python 3.11's `tomllib`; generated configuration is also exercised through the real engine acceptance test. New fixtures are synthetic public examples, not captured private API responses.
+The suite contains **189 tests: 188 passed, one skipped, zero failed**, on Linux with Python 3.10.12. It retains all earlier 186 cases and adds three timeout-default/configuration/validation regressions. The skip intentionally requires Python 3.11's `tomllib`; generated configuration is also exercised through the real engine acceptance test. New fixtures are synthetic public examples, not captured private API responses.
+
+A separate delayed-response diagnostic against the real pinned engine confirmed that SSE comment heartbeats do not prevent its event-idle timeout: a one-second stream limit failed for a three-second fixture, while a six-second limit completed successfully. No live job was submitted by this diagnostic. The per-job polling default is now 300 seconds, configurable via JVCLI_WAIT_TIMEOUT, and the stream budget accommodates the initial job, two possible corrections and submission overhead. The whole-turn deadline remains independent. Longer local waiting does not resolve a server-side waiting_for_auth status.
 
 Coverage includes:
 
