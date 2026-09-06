@@ -1,11 +1,16 @@
-JV CLI 0.3.1 bounded-discovery/permission/protocol validation (2026-09-06)
+JV CLI 0.3.3 terminal-readability validation (2026-09-06)
 
-209 tests run: 208 passed, 1 skipped, 0 failed
+228 tests run: 227 passed, 1 skipped, 0 failed
 1 environment-specific test skipped on Python 3.10 (tomllib is Python 3.11+)
-Real pinned-engine acceptance: PASS (11/11 default checks)
+Real pinned-engine acceptance: PASS (13/13 default checks)
+Compact/verbose output and visible failures: PASS
+TTY prose, code preservation and unchanged JSONL output: PASS
+Waiting-status deduplication: PASS
+Network-enabled tool reaches local HTTP fixture: PASS
+Network-enabled mode still denies outside-workspace writes: PASS
 Long-fenced final decoding with nested examples: PASS
 Varied Rust discovery loop stops without partial batch execution: PASS
-Interactive permission aliases, default/network-enabled/read-only: PASS
+Interactive permission aliases, default/network-enabled/network-disabled/read-only: PASS
 Package manifest verification: PASS
 Deterministic release build: PASS
 Extracted release verification: PASS

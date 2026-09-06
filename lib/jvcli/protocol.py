@@ -27,6 +27,7 @@ A newline inside a JSON string is \n. Do not Markdown-escape underscores or othe
 For a coding task, inspect the workspace first, then make small edits and verify them with tools.
 Use the provided tool results to continue; do not repeat work that has already succeeded.
 If you cannot complete a task, explain the concrete blocker in a final answer.
+Make final answers easy to read in a terminal: use a short summary, then separate sections or bullets for changed files, checks performed, and how to run. Put exact run commands in fenced code blocks and URLs on their own line. Avoid one long paragraph, repeated tool transcripts, and decorative ASCII art. Do not claim success or server shutdown without confirming tool results.
 When the task is finished, return a final answer.
 '''
 BASE_AGENT_INSTRUCTIONS = '''You are JV CLI, a software-engineering agent in the user's selected workspace.

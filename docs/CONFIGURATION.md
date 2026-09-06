@@ -49,9 +49,10 @@ HTTPS is required except loopback HTTP. Base origins must not contain embedded c
 ## Defaults and limits
 
 - Pinned engine: 0.149.1; model alias: `jv-local`.
-- Default: workspace-write, no tool networking, no elevation approval, no automatic sandbox bypass.
-- `--read-only` requests denial of tool writes.
-- `--allow-network` enables tool networking only for workspace-write. It does not grant system-wide file access.
+- Default: workspace-write with tool networking, no elevation approval, no automatic sandbox bypass.
+- `--read-only` requests denial of tool writes and disables tool networking.
+- `--no-network` disables tool networking in write mode; JV API traffic still requires networking.
+- `--allow-network` explicitly enables tool networking only for workspace-write. It does not grant sudo or system-wide file access. Network flags work before or after `exec`/`resume`; a subcommand flag overrides a flag before the subcommand.
 - Max incoming adapter JSON: bounded by the transport JSON limit (8 MiB).
 - JV text submission: 100 KiB; coding prompt budget: 96 KiB.
 - Uploads: at most 10 files, 25 MiB each, 100 MiB combined; regular non-symlink files.

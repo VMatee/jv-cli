@@ -104,13 +104,19 @@ jvcli exec "update the README, then show the diff"
 
 The prompt is sent to the engine over standard input rather than exposed as a child-process argument.
 
+Terminal output shows compact command previews, explicit completion/failure status and one changed file per line. Long scripts are not dumped into the normal conversation. Use `jvcli --verbose` (or `jvcli exec --verbose "task"`) for full commands and bounded tool output. Unchanged waiting status is repeated at most once per minute; changed status and response-correction notices remain visible.
+
+Final answers have a separate heading and terminal prose wraps to the available width. Fenced code, inline code, tables and URLs are not reflowed. Model instructions request a short summary, verification details and separate run commands, but model formatting can still vary. Redirected answer text remains unchanged; `jvcli exec --json "task"` still emits JSONL on stdout with diagnostics on stderr.
+
 ## Read-only Mode
 
 ```bash
 jvcli exec --read-only "review this repository without changing files"
 ```
 
-Read-only mode requests an engine-enforced read-only sandbox. Tool network access is denied by default. For a trusted write-mode task that explicitly needs dependency downloads, use `--allow-network`; it cannot be combined with `--read-only`.
+Plain `jvcli` and `jvcli exec` enable tool networking by default in workspace-write mode. Use `jvcli --no-network` (or `jvcli exec --no-network "task"`) to deny tool networking; the JV API itself still requires a connection. `--allow-network` remains supported.
+
+Read-only mode requests an engine-enforced read-only sandbox and disables tool networking automatically. Explicit `--allow-network` cannot be combined with `--read-only`. Network access does not grant sudo, system-wide writes or permission to install system toolchains. Only run network-enabled tools in trusted workspaces: they can send data to external services.
 
 ## Project Isolation
 

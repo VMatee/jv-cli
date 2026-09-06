@@ -12,10 +12,13 @@ import os
 from pathlib import Path
 import queue
 import re
+import shlex
+import shutil
 import signal
 import subprocess
 import sys
 import threading
+import textwrap
 import time
 import uuid
 import warnings
@@ -243,26 +246,104 @@ def _engine_env(session_dir=None, adapter_key=None):
     return env
 
 
-def _describe_item(item, started=False):
+def _command_preview(command, width=100):
+    """Display only; never modify the command submitted to the engine."""
+    command = terminal_text(str(command))
+    try:
+        words = shlex.split(command)
+        if len(words) == 3 and words[0] in ('/bin/bash', '/bin/sh', 'bash', 'sh') and words[1] in ('-lc', '-c'):
+            command = words[2]
+    except ValueError:
+        pass
+    lines = command.splitlines()
+    first = next((line.strip() for line in lines if line.strip()), 'command')
+    shortened = len(first) > width or len(lines) > 1
+    first = first[:width] + ('...' if len(first) > width else '')
+    if shortened:
+        first += f' [{len(lines)} lines; --verbose for details]' if len(lines) > 1 else ' [--verbose for details]'
+    return first
+
+
+def _format_answer(text, width=88):
+    """Wrap terminal prose without reflowing fenced/indented code or tables."""
+    width = max(20, min(width, 120))
+    output = []
+    fence = None
+    for line in text.splitlines():
+        marker = re.match(r'^\s*(`{3,}|~{3,})', line)
+        if marker:
+            run = marker.group(1)
+            if fence is None:
+                fence = run
+            elif run[0] == fence[0] and len(run) >= len(fence) and not line.strip()[len(run):].strip():
+                fence = None
+            output.append(line)
+            continue
+        if fence or not line.strip() or line.startswith(('    ', '\t')) or '|' in line or '`' in line:
+            output.append(line)
+            continue
+        bullet = re.match(r'^(\s*(?:[-*+]|\d+[.)])\s+)', line)
+        indent = ' ' * len(bullet.group(1)) if bullet else ''
+        output.append(textwrap.fill(line, width=width, subsequent_indent=indent,
+                                    break_long_words=False, break_on_hyphens=False,
+                                    replace_whitespace=False))
+    return '\n'.join(output)
+
+
+class _ProgressDisplay:
+    def __init__(self, started):
+        self.started = started
+        self.last_emit = started
+        self.status = None
+
+    def update(self, status, now, verbose=False):
+        if status != self.status:
+            self.status, self.last_emit = status, now
+            return 'Waiting: ' + status
+        if now - self.last_emit >= (15 if verbose else 60):
+            self.last_emit = now
+            elapsed = max(0, int(now - self.started))
+            return f'Still waiting ({elapsed // 60}m {elapsed % 60:02d}s elapsed): {status}' if verbose else f'Still waiting ({elapsed // 60}m {elapsed % 60:02d}s elapsed).'
+        return None
+
+
+def _describe_item(item, started=False, verbose=False):
     kind = item.get('type')
     if kind == 'agent_message' and not started:
         text = item.get('text')
         if isinstance(text, str) and text.strip():
-            print(terminal_text(text).rstrip(), flush=True)
+            text = terminal_text(text).rstrip()
+            say('\nAnswer\n------')
+            if sys.stdout.isatty():
+                text = _format_answer(text, shutil.get_terminal_size((88, 24)).columns - 2)
+            print(text, flush=True)
+            say('')
     elif kind == 'command_execution':
         if started:
-            say('running: ' + str(item.get('command', item.get('cmd', 'command')))[:1000])
+            command = str(item.get('command', item.get('cmd', 'command')))
+            if verbose:
+                say('\nRun:\n' + terminal_text(command))
+            else:
+                say('\nRun: ' + _command_preview(command))
         else:
             code = item.get('exit_code')
-            say(f'command completed (exit {code})' if code is not None else 'command completed')
-            if code not in (0, '0', None):
+            if code in (0, '0'):
+                say('  OK (exit 0)')
+            elif code is None:
+                say('  Command ended (exit status not reported)')
+            else:
+                say(f'  FAILED (exit {code})')
+            if verbose or code not in (0, '0', None):
                 output = item.get('aggregated_output') or item.get('output')
                 if isinstance(output, str):
-                    say(output[-4000:])
+                    if output.strip():
+                        say('  Output' + (' (last 4000 characters)' if len(output) > 4000 else '') + ':\n' + output[-4000:])
     elif kind in ('file_change', 'file_changes') and not started:
         changes = item.get('changes', [])
         names = [str(c.get('path', 'file')) for c in changes[:12] if isinstance(c, dict)]
-        say('files updated: ' + ', '.join(names))
+        say('\nUpdated files:\n' + '\n'.join('  - ' + name for name in names))
+        if len(changes) > 12:
+            say(f'  ... and {len(changes) - 12} more')
     elif kind in ('mcp_tool_call', 'tool_call') and started:
         say('using tool: ' + str(item.get('name') or item.get('tool') or 'tool'))
 
@@ -287,7 +368,7 @@ def _stop_process(process):
 
 
 def _run_engine(engine, prompt, thread_id, *, session_dir=None, overrides=(), runtime=None,
-                json_mode=False, turn_timeout=3600):
+                json_mode=False, turn_timeout=3600, verbose=False):
     if not isinstance(prompt, str) or not prompt.strip() or len(prompt.encode()) > 100 * 1024:
         raise JvError('Prompt must be nonempty and no larger than 100 KiB')
     # Prompt travels over stdin, not process arguments or shell expansion.
@@ -353,6 +434,8 @@ def _run_engine(engine, prompt, thread_id, *, session_dir=None, overrides=(), ru
     forced_rc = None
     started = time.monotonic()
     last_progress = started
+    progress = _ProgressDisplay(started)
+    command_active = False
     try:
         while True:
             if runtime:
@@ -371,7 +454,10 @@ def _run_engine(engine, prompt, thread_id, *, session_dir=None, overrides=(), ru
                 kind, raw = events.get(timeout=0.2)
             except queue.Empty:
                 if time.monotonic() - last_progress >= 15:
-                    say('Waiting: ' + (runtime.status if runtime else 'agent engine'))
+                    status = 'local command' if command_active else (runtime.status if runtime else 'agent engine')
+                    notice = progress.update(status, time.monotonic(), verbose=verbose)
+                    if notice:
+                        say(notice)
                     last_progress = time.monotonic()
                 continue
             if kind == 'eof':
@@ -402,12 +488,14 @@ def _run_engine(engine, prompt, thread_id, *, session_dir=None, overrides=(), ru
             elif typ in ('item.started', 'item.completed'):
                 item = event.get('item')
                 if isinstance(item, dict):
+                    if item.get('type') == 'command_execution':
+                        command_active = typ == 'item.started'
                     if typ == 'item.completed' and item.get('type') == 'agent_message' and isinstance(item.get('text'), str) and item['text'].strip():
                         saw_message = True
                     if not json_mode:
                         # Redact any accidental echo of known secrets before display.
                         item = redact_data(item, secrets)
-                        _describe_item(item, started=typ == 'item.started')
+                        _describe_item(item, started=typ == 'item.started', verbose=verbose)
             elif typ == 'turn.completed':
                 completed = True
             elif typ in ('error', 'turn.failed'):
@@ -478,8 +566,10 @@ def _session_directory(value):
     return no_symlink_path(STATE_DIR / 'runs' / value)
 
 
-def _run_session(prompt=None, *, resume=None, read_only=False, allow_network=False, json_mode=False):
+def _run_session(prompt=None, *, resume=None, read_only=False, allow_network=None, json_mode=False, verbose=False):
     workspace = _workspace_check(Path.cwd())
+    if allow_network is None:
+        allow_network = not read_only
     if read_only and allow_network:
         raise JvError('--allow-network is available only in workspace-write mode')
     engine = _find_engine()
@@ -549,7 +639,7 @@ def _run_session(prompt=None, *, resume=None, read_only=False, allow_network=Fal
                     if task in ('/permission', '/permissions'):
                         say(f'Workspace: {workspace}\nSandbox: {"read-only" if read_only else "workspace-write"}\n'
                             f'Tool network: {"enabled" if allow_network else "disabled"}\n'
-                            'Policy is fixed for this session; restart with --read-only or --allow-network to change it.\n'
+                            'Policy is fixed for this session; restart with --read-only, --no-network or --allow-network to change it.\n'
                             'No YOLO/sandbox-bypass mode. Network access does not authorize global installations.\n'
                             'Installation and engine state are isolated; this is not a VM or a guarantee that other files cannot be read.')
                         continue
@@ -568,7 +658,7 @@ def _run_session(prompt=None, *, resume=None, read_only=False, allow_network=Fal
                         continue
                 runtime.begin_turn()
                 rc, new_thread = _run_engine(engine, task, thread_id, session_dir=session_dir, overrides=overrides,
-                    runtime=runtime, json_mode=json_mode,
+                    runtime=runtime, json_mode=json_mode, verbose=verbose,
                     turn_timeout=turn_timeout)
                 if new_thread:
                     thread_id = new_thread
@@ -686,7 +776,12 @@ def _parser():
     parser = argparse.ArgumentParser(prog='jvcli', description='JV CLI coding agent. No password is stored.')
     parser.add_argument('--version', action='version', version='JV CLI ' + VERSION)
     parser.add_argument('--read-only', action='store_true', help='Deny model tool writes')
-    parser.add_argument('--allow-network', action='store_true', help='Explicitly allow tool networking; does not grant system-wide writes')
+    parser.add_argument('--verbose', action='store_true', help='Show full commands and bounded tool output for diagnostics')
+    network = parser.add_mutually_exclusive_group()
+    network.add_argument('--allow-network', action='store_true', default=None,
+                         help='Allow tool networking (default in write mode); does not grant system-wide writes')
+    network.add_argument('--no-network', action='store_false', dest='allow_network', default=None,
+                         help='Deny tool networking; JV API requests still require a connection')
     subs = parser.add_subparsers(dest='command')
     login = subs.add_parser('login', help='Verify credentials and save username/API origin only')
     login.add_argument('--username')
@@ -707,7 +802,10 @@ def _parser():
             sub.add_argument('session_id')
         sub.add_argument('prompt', nargs='+' if command == 'exec' else '*')
         sub.add_argument('--read-only', action='store_true', default=argparse.SUPPRESS)
-        sub.add_argument('--allow-network', action='store_true', default=argparse.SUPPRESS)
+        sub.add_argument('--verbose', action='store_true', default=argparse.SUPPRESS)
+        network = sub.add_mutually_exclusive_group()
+        network.add_argument('--allow-network', action='store_true', default=argparse.SUPPRESS)
+        network.add_argument('--no-network', action='store_false', dest='allow_network', default=argparse.SUPPRESS)
         sub.add_argument('--json', action='store_true', help='Output agent events as JSONL, diagnostics on stderr')
     for command in ('ask', 'job'):
         sub = subs.add_parser(command, help='Direct JV API request; does not execute coding tools')
@@ -762,7 +860,7 @@ def main(argv=None):
         if prompt is None and not sys.stdin.isatty():
             raise JvError('Interactive mode requires a terminal; use jvcli exec "your task" for automation')
         return _run_session(prompt, resume=getattr(args, 'session_id', None), read_only=args.read_only,
-                            allow_network=args.allow_network, json_mode=getattr(args, 'json', False))
+                            allow_network=args.allow_network, json_mode=getattr(args, 'json', False), verbose=args.verbose)
     except KeyboardInterrupt:
         say('Interrupted. A submitted remote job may continue.')
         return 130

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.3 — 2026-09-06
+
+- Make normal terminal output compact: preview long scripts, separate changed files and distinguish successful, failed and unknown command exits.
+- Add `--verbose` for full commands, bounded output and more frequent waiting diagnostics. Keep JSONL output unchanged.
+- Deduplicate unchanged waiting status to one reminder per minute, retaining job/status changes and correction notices.
+- Separate final answers and wrap terminal prose without rewriting code blocks, inline code, URLs or tables; preserve redirected answer text.
+- Request concise, structured final model answers with separate verification and run instructions. No changes to authentication, execution, network defaults or sandbox policy.
+
+## 0.3.2 — 2026-09-06
+
+- Enable tool networking by default for interactive, exec and resume workspace-write sessions.
+- Add `--no-network` before or after exec/resume. Preserve explicit `--allow-network` compatibility.
+- Keep read-only sessions network-disabled and reject explicit read-only/network-enabled combinations.
+- Keep workspace write boundaries, credential isolation, engine 0.149.1 and no elevation/bypass unchanged. Network permission is not sudo permission.
+- Validate the default and explicit policies in pseudo-terminals, option placement and conflicts, actual engine network access/denial and outside-workspace write denial with networking enabled.
+
 ## 0.3.1 — 2026-09-06
 
 - Decode matching JSON fences of three or more backticks, including a standalone JSON badge and nested code examples. Mismatched/truncated envelopes do not execute.

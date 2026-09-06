@@ -20,7 +20,7 @@ From the actual installed folder run `./install.sh`. Node 18+, npm and Python 3.
 
 ## Resume rejects --color
 
-That regression is covered: the launcher only passes `--color never` on the initial exec. Run `jvcli --version` and verify 0.3.1. Check for a stale PATH or an older extracted folder. Old 0.2.x histories are not automatically migrated.
+That regression is covered: the launcher only passes `--color never` on the initial exec. Run `jvcli --version` and verify 0.3.3. Check for a stale PATH or an older extracted folder. Old 0.2.x histories are not automatically migrated.
 
 ## Raw tool JSON printed / malformed tool response
 
@@ -74,7 +74,7 @@ For Flask checks, prefer importing the app with the project's .venv Python and u
 
 Run `python3 -B scripts/engine_smoke.py` as a normal user. Keep its `.state/engine-checks/.../report.json`. Do not disable the sandbox to force the test to pass. This build cannot certify arbitrary Ubuntu/kernel/container configurations.
 
-Network access from tools is disabled by default. A trusted project that needs downloads must be started with `jvcli --allow-network`; use a project-local virtual environment. Python's `venv` support may need a host prerequisite. Servers should bind 127.0.0.1, not the public interface.
+Network access from tools is enabled by default in workspace-write mode; `jvcli --allow-network` is still accepted. Use `jvcli --no-network` to deny tool networking, or `--read-only` to deny both tool writes and tool networking. Use a project-local virtual environment. Python's `venv` support may need a host prerequisite. Servers should bind 127.0.0.1, not the public interface. Networking does not grant sudo or remove workspace-write boundaries.
 
 ## Existing project .codex/config.toml rejected
 

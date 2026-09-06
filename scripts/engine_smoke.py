@@ -51,13 +51,13 @@ class ScriptedClient:
 
 
 def run_case(engine, folder, name, steps, *, thread_id=None, read_only=False,
-             repairs=0, expected_error=None, expected_output=None):
+             repairs=0, expected_error=None, expected_output=None, allow_network=False):
     client = ScriptedClient(steps)
     runtime = AdapterRuntime(client, heartbeat=.5)
     output, errors = io.StringIO(), io.StringIO()
     try:
         port = runtime.start()
-        overrides = cli._write_engine_config(folder, port, read_only=read_only)
+        overrides = cli._write_engine_config(folder, port, read_only=read_only, allow_network=allow_network)
         runtime.begin_turn()
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
             rc, thread = cli._run_engine(engine, f'Run the local acceptance case: {name}', thread_id,
@@ -232,9 +232,24 @@ def main():
                 ({'type':'final','text':'NETWORK_CHECK_DONE'},'JV_NETWORK_ATTEMPT')])
             if hits:
                 raise JvError('SAFETY FAILURE: tool reached a network endpoint with networking disabled')
+            checks['tool_network_denied'] = True
+            code = (f"import urllib.request; response = urllib.request.urlopen('http://127.0.0.1:{http.server_address[1]}/', timeout=2); "
+                    "assert response.read() == b'ok'; print('JV_NETWORK_ALLOWED')")
+            run_case(engine, session, 'tool networking explicitly enabled', [
+                ({'type':'tool_call','name':'shell_command','arguments':{'command':'python3 -c ' + shlex.quote(code)}}, None),
+                ({'type':'final','text':'NETWORK_ALLOW_CHECK_DONE'}, 'JV_NETWORK_ALLOWED')], allow_network=True)
+            if not hits:
+                raise JvError('Enabled tool networking did not reach the local fixture server')
+            checks['tool_network_allowed'] = True
+            run_case(engine, session, 'network access does not grant outside-workspace writes', [
+                ({'type':'tool_call','name':'shell_command','arguments':{
+                    'command':'printf JV_NETWORK_WRITE_ATTEMPT; printf changed > ' + shlex.quote(str(protected))}}, None),
+                ({'type':'final','text':'NETWORK_WRITE_DENIED'}, 'JV_NETWORK_WRITE_ATTEMPT')], allow_network=True)
+            if protected.read_text() != 'DO NOT CHANGE':
+                raise JvError('SAFETY FAILURE: network-enabled mode allowed outside-workspace writes')
+            checks['network_enabled_outside_workspace_write_denied'] = True
         finally:
             http.shutdown();http.server_close();worker.join(1)
-        checks['tool_network_denied'] = True
         report['ok'] = True
     except (JvError,OSError) as exc:
         report['ok'] = False

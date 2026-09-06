@@ -1,5 +1,17 @@
 # JV CLI test report
 
+## 0.3.3 validation — 2026-09-06
+
+Automated suite: 228 cases, 227 passed, one skipped (Python 3.10 lacks tomllib), zero failed. Sixteen new regressions cover compact and verbose command display, visible failure output, unknown exit statuses, file-list layout, TTY prose wrapping, unchanged redirected text, preservation of code/URLs/tables, terminal-control sanitization, waiting-status deduplication, verbose flag placement, final-answer instructions and JSONL output with verbose enabled.
+
+All thirteen default real-engine checks passed with engine 0.149.1. The real shell, patch, resume, response correction, network-enabled/disabled and workspace protection cases remain passing. This is a presentation change; command execution, API authentication and network policy are unchanged from 0.3.2. No live JV API jobs were submitted, so the model's adherence to the requested final-answer layout is not guaranteed.
+
+## 0.3.2 validation — 2026-09-06
+
+Automated suite: 212 cases, 211 passed, one skipped (Python 3.10 lacks tomllib), zero failed. The interactive pseudo-terminal test now checks default networking, explicit allow/deny flags and read-only behavior, including the generated engine configuration and no model jobs for local permission commands. Additional tests cover flag placement for exec/resume, conflicting flags and explicit network/read-only rejection before engine lookup or login.
+
+All thirteen default real-engine checks passed with engine 0.149.1. New checks prove a network-enabled tool can reach a disposable loopback HTTP server while an outside-workspace write remains denied. Existing network-denied and read-only checks still pass. Scripted responses were used; no live JV API jobs, Rust installation, sudo configuration or sandbox bypass were involved.
+
 ## 0.3.1 validation — 2026-09-06
 
 The automated suite completed 209 cases: 208 passed, one skipped (Python 3.10 lacks tomllib), zero failed. Seventeen new cases cover longer/mismatched JSON fences, preservation of nested code examples and patch contents, varied Rust-discovery probes, atomic batch and SSE rejection, per-turn reset, canonical repeated-action signatures, legitimate build/source-only outcomes, and both permission aliases under three policies in a pseudo-terminal.

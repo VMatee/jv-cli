@@ -176,8 +176,9 @@ print(json.dumps({"type":"turn.completed","usage":{"input_tokens":10,"cached_inp
 class CliEndToEndTests(unittest.TestCase):
     def test_permission_aliases_are_local_read_only_and_report_effective_policy(self):
         for flags, sandbox, network in (
-                ([], 'workspace-write', 'disabled'),
+                ([], 'workspace-write', 'enabled'),
                 (['--allow-network'], 'workspace-write', 'enabled'),
+                (['--no-network'], 'workspace-write', 'disabled'),
                 (['--read-only'], 'read-only', 'disabled')):
             with self.subTest(flags=flags):
                 class Handler(E2EJvHandler):
@@ -219,6 +220,10 @@ class CliEndToEndTests(unittest.TestCase):
                         self.assertEqual(Handler.job_count, 0)
                         self.assertTrue(Handler.saw_logout)
                         self.assertEqual(list(workspace.iterdir()), [])
+                        config = next((root / 'state/runs').glob('*/engine/config.toml')).read_text()
+                        self.assertIn('"network_access" = ' + ('true' if network == 'enabled' else 'false'), config)
+                        self.assertIn('sandbox_mode = "' + sandbox + '"', config)
+                        self.assertIn('approval_policy = "never"', config)
                 finally:
                     server.shutdown()
                     server.server_close()
@@ -320,7 +325,7 @@ class CliEndToEndTests(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, msg=result.stdout + "\n" + result.stderr)
                 self.assertIn("Signed in as user", result.stderr)
-                self.assertIn("running: pwd", result.stderr)
+                self.assertIn("Run: pwd", result.stderr)
                 self.assertIn("E2E done", result.stdout)
                 self.assertTrue(E2EJvHandler.saw_logout)
                 self.assertEqual(E2EJvHandler.job_count, 2)

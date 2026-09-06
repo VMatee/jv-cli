@@ -14,7 +14,7 @@ $HOME/.local/bin/jvcli doctor --json
 ./test.sh
 ```
 
-Expected package version: `0.3.1`. Expected engine: `0.149.1`. `doctor` checks local configuration/version/help, not live authentication or tool execution. `test.sh` uses only loopback mock services and fake engine scripts, not real credentials.
+Expected package version: `0.3.3`. Expected engine: `0.149.1`. `doctor` checks local configuration/version/help, not live authentication or tool execution. `test.sh` uses only loopback mock services and fake engine scripts, not real credentials.
 
 The installer must not require sudo or create a global executable. It creates only the per-user application and launcher paths. It reports a missing `~/.local/bin` PATH entry and changes `~/.bashrc` only with explicit `--add-path`.
 
@@ -31,6 +31,7 @@ This uses the installed **real** engine, a scripted local model, and disposable 
 - An attempted outside-workspace write leaves the protected fixture unchanged.
 - Read-only mode prevents a workspace write.
 - With tool networking disabled, a tool cannot reach the local fixture HTTP server.
+- With tool networking enabled, a tool reaches that server, but still cannot write outside the workspace.
 
 The script prints JSON and saves `report.json` in its fixture directory. It exits nonzero on failure. These checks are intentionally conservative: if your environment cannot support them, investigate rather than weakening the sandbox. The tests are not a complete sandbox penetration test.
 

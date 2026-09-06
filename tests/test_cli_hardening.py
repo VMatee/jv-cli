@@ -18,6 +18,26 @@ from jvcli.safety import JvError
 
 
 class CliHardening(unittest.TestCase):
+    def test_network_flags_across_interactive_exec_and_resume(self):
+        for suffix in ([], ['exec', 'inspect'], ['resume', 'test-session']):
+            for flag, value in (('--allow-network', True), ('--no-network', False)):
+                for argv in ([flag, *suffix], [*suffix, flag]):
+                    with self.subTest(argv=argv):
+                        self.assertIs(cli._parser().parse_args(argv).allow_network, value)
+            self.assertIsNone(cli._parser().parse_args(suffix).allow_network)
+
+    def test_conflicting_network_flags_are_rejected(self):
+        for prefix in ([], ['exec', 'inspect'], ['resume', 'test-session']):
+            with self.subTest(prefix=prefix), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    cli._parser().parse_args([*prefix, '--allow-network', '--no-network'])
+
+    def test_explicit_network_with_read_only_rejected_before_engine_or_login(self):
+        with tempfile.TemporaryDirectory() as td, patch.object(cli, '_workspace_check', return_value=Path(td)), patch.object(cli, '_find_engine') as engine:
+            with self.assertRaisesRegex(JvError, 'only in workspace-write'):
+                cli._run_session('inspect', read_only=True, allow_network=True)
+            engine.assert_not_called()
+
     def test_default_job_timeout_is_five_minutes(self):
         from jvcli.transport import JvClientConfig
         self.assertEqual(JvClientConfig().wait_timeout, 300)
@@ -95,6 +115,19 @@ print(json.dumps({"type":"turn.completed"}))
         result,out,_=self.run_engine(body,json_mode=True)
         self.assertEqual(result[0],0)
         for line in out.splitlines():self.assertIsInstance(json.loads(line),dict)
+    def test_verbose_json_mode_keeps_events_and_does_not_add_human_headings(self):
+        body = '''print(json.dumps({"type":"item.started","item":{"type":"command_execution","command":"echo detail"}}))
+print(json.dumps({"type":"item.completed","item":{"type":"command_execution","exit_code":0,"aggregated_output":"detail"}}))
+print(json.dumps({"type":"item.completed","item":{"type":"agent_message","text":"Long final text preserved exactly."}}))
+print(json.dumps({"type":"turn.completed"}))
+'''
+        result, out, err = self.run_engine(body, json_mode=True, verbose=True)
+        self.assertEqual(result[0], 0)
+        events = [json.loads(line) for line in out.splitlines()]
+        self.assertEqual(len(events), 4)
+        self.assertEqual(events[2]['item']['text'], 'Long final text preserved exactly.')
+        self.assertNotIn('Answer\n------', out + err)
+        self.assertNotIn('Run:', out + err)
     def test_engine_child_does_not_inherit_account_secrets(self):
         with patch.dict(os.environ,{'JV_API_PASSWORD':'SECRET','OPENAI_API_KEY':'SECRET','GITHUB_TOKEN':'SECRET','SSH_AUTH_SOCK':'secret.sock'}):
             env=cli._engine_env()
