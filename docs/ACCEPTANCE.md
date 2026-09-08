@@ -14,7 +14,7 @@ $HOME/.local/bin/jvcli doctor --json
 ./test.sh
 ```
 
-Expected package version: `0.3.3`. Expected engine: `0.149.1`. `doctor` checks local configuration/version/help, not live authentication or tool execution. `test.sh` uses only loopback mock services and fake engine scripts, not real credentials.
+Expected package version: `0.4.0`. Expected engine: `0.149.1`. `doctor` checks local configuration/version/help, not live authentication or tool execution. `test.sh` uses only loopback mock services and fake engine scripts, not real credentials.
 
 The installer must not require sudo or create a global executable. It creates only the per-user application and launcher paths. It reports a missing `~/.local/bin` PATH entry and changes `~/.bashrc` only with explicit `--add-path`.
 
@@ -35,6 +35,8 @@ This uses the installed **real** engine, a scripted local model, and disposable 
 
 The script prints JSON and saves `report.json` in its fixture directory. It exits nonzero on failure. These checks are intentionally conservative: if your environment cannot support them, investigate rather than weakening the sandbox. The tests are not a complete sandbox penetration test.
 
+The default checks also run one structured two-round loopback flow through the real pinned engine. It validates the mandatory remote fields, certified shell-only declaration, actual local command result, exact `call_id`, `previous_response_id`, resent instructions/tools, durable state and zero client prompt repairs. This remains scripted model output and does not contact JV Server.
+
 The script passed against 0.149.1 during release preparation. Keep a fresh report from each Ubuntu deployment class.
 
 It also exercises malformed-response correction after a real shell tool, generic-error recovery, and repeated invalid batches that must fail without executing even their valid member. Optionally pass `--flask-python /absolute/path/to/disposable/venv/bin/python` with Flask already installed to create a small Flask app through the real patch tool and verify its HTML/CSS with Flask's test client. This optional check installs nothing and starts no persistent server. Scripted replies do not establish live-model compatibility.
@@ -51,6 +53,15 @@ python3 -B scripts/live_smoke.py
 The script identifies the API/user and asks you to type `RUN`. It signs in, uploads its harmless text fixture, polls for success, submits a follow-up using the returned conversation ID, verifies another text response, and attempts logout. It creates two jobs and may consume quota. No passwords are printed or saved.
 
 This checks the API contract, not coding-model ability. Generated files may not be produced by this prompt; their real-server download path needs a separate applicable test. Keep the IDs/status, not credentials, as evidence.
+
+For the structured candidate, perform exactly one additional controlled coding flow from a disposable workspace after offline checks pass:
+
+```bash
+JVCLI_AGENT_API=1 jvcli exec --read-only \
+  "Use shell_command once to print the current directory, then report the exact result."
+```
+
+Record both response IDs, the exact call ID, the continuation's `previous_response_id`, evidence that the actual tool output reached round two, final Codex exit status and `response_repairs=0`. Do not use a real user project or repeat provider rounds after a complete proof.
 
 ## 4. Real model, real tools, multiple turns
 

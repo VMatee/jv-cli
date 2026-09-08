@@ -4,15 +4,15 @@ JV CLI is an AI coding-agent CLI that connects to JV LLM while running developme
 
 Command: `jvcli`
 
-Current source version: **0.3.3** (canonical value: [VERSION](VERSION)). The engine is pinned to `@openai/codex@0.149.1`.
+Current source version: **0.4.0** (canonical value: [VERSION](VERSION)). The engine is pinned to `@openai/codex@0.149.1`.
 
-The latest changes on `main` enable tool networking by default in workspace-write mode and improve terminal readability. Workspace protections remain enabled; there is no YOLO mode, automatic sudo elevation, or passwordless-sudo setup. A source version on `main` is not a published GitHub Release.
+The current source also contains an opt-in pilot for JV's structured Responses API. Legacy `/v1/jobs` coding remains the default during the controlled rollout. Workspace protections remain enabled; there is no YOLO mode, automatic sudo elevation, or passwordless-sudo setup. A source version on `main` is not a published GitHub Release.
 
 See [the changelog](docs/CHANGELOG.md) for version history and [the test report](docs/TEST_REPORT.md) for validation and limitations.
 
 ## What is JV CLI?
 
-JV CLI provides an interactive and one-shot coding workflow backed by the JV job API. A small authenticated loopback adapter translates between the pinned agent engine's Responses protocol and JV jobs. Shell commands and patches run locally under the engine sandbox; the API/model receives the task and context needed to produce responses.
+JV CLI provides an interactive and one-shot coding workflow backed by JV. A small authenticated loopback adapter translates between the pinned agent engine's Responses protocol and either the legacy JV job API or the opt-in structured Responses pilot. Tools always run locally under the engine sandbox; JV Server never executes client tools.
 
 JV CLI is an independent project and is not endorsed by OpenAI. Required upstream notices are retained in this repository and in release archives.
 
@@ -190,6 +190,14 @@ Each model job waits up to five minutes by default; a complete coding turn has a
 JVCLI_WAIT_TIMEOUT=600 jvcli
 ```
 
+Structured transport is intentionally opt-in for the first rollout:
+
+```bash
+JVCLI_AGENT_API=1 jvcli exec "inspect this project"
+```
+
+This uses asynchronous `POST /v1/responses` plus polling and durable per-round idempotency state. Use the same setting when resuming a structured session. Omitting the variable keeps the existing `/v1/jobs` coding path.
+
 Longer waiting does not resolve server-side `waiting_for_auth` or malformed model responses. See [configuration](docs/CONFIGURATION.md) for timeout variables, precedence and limits.
 
 ## Updating
@@ -262,7 +270,7 @@ jvcli auth status
 
 If `jvcli` is not found, add `$HOME/.local/bin` to the current shell's `PATH`. If the engine is absent or mismatched, rerun `./install.sh` from a trusted clone or the installed `install.sh`. Do not install an unrelated similarly named system package. See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
-If a completed model job returns malformed tool JSON or a known generic error answer, JV CLI requests up to two corrected responses before stopping with the job ID. No rejected tool call executes. Corrections can consume additional quota and cannot guarantee model quality; `--allow-network` only changes tool networking, not response formatting.
+In legacy mode, if a completed model job returns malformed tool JSON or a known generic error answer, JV CLI requests up to two corrected responses before stopping with the job ID. Structured mode instead validates the native response once and fails closed with zero client prompt repairs. No rejected tool call executes; `--allow-network` only changes tool networking, not response formatting.
 
 Missing Rust is a prerequisite issue, not evidence that shell/patch tools are unavailable. JV CLI can still prepare source files, but cannot claim compilation passed without a working compiler. Its model instructions prohibit borrowing another project's private toolchain and require explicit user authorization for toolchain installation; network access alone is not authorization. These instructions are guidance, not an additional filesystem security boundary.
 
@@ -286,7 +294,7 @@ python3 -B scripts/engine_smoke.py
 
 The unit suite uses temporary homes and mock services. The engine smoke test uses the real pinned local engine with a scripted loopback model and does not contact the live JV API. `scripts/live_smoke.py` is optional, requires an account, asks for confirmation, and may consume quota.
 
-The recorded 0.3.3 validation on Python 3.10 ran **228 automated tests: 227 passed, one skipped, zero failed**, plus **13 passing real-engine checks**. The skip needs Python 3.11's `tomllib`. Checks include shell/patch execution, resume, protocol recovery, terminal output, networking enabled/disabled and denied writes outside the workspace. These are scoped tests, not a guarantee about every live model or operating system.
+The recorded 0.4.0 validation on Python 3.10 ran **247 automated tests: 246 passed, one skipped, zero failed**, plus **14 passing real-engine checks**. The skip needs Python 3.11's `tomllib`. Checks include the opt-in structured two-round shell continuation, legacy shell/patch execution, resume, protocol recovery, terminal output, networking enabled/disabled and denied writes outside the workspace. These are scoped tests, not a guarantee about every live model or operating system.
 
 To additionally check generated Flask files and HTML/CSS responses after a malformed reply, pass `--flask-python /absolute/path/to/venv/bin/python` to `engine_smoke.py`, using a disposable virtual environment that already contains Flask. The check uses Flask's test client, installs no packages itself, and leaves no server running. It tests adapter/tool integration, not the live model's coding ability.
 
@@ -303,12 +311,13 @@ sha256sum -c "jv-cli-$(cat ../VERSION)-linux-x86_64.zip.sha256"
 ```text
 jvcli CLI
   -> authenticated loopback Responses adapter
-    -> JV HTTPS job API
+    -> legacy JV HTTPS job API (default)
+    -> structured asynchronous Responses API (JVCLI_AGENT_API=1)
   -> pinned local Codex engine
-    -> sandboxed shell_command / apply_patch in the selected workspace
+    -> sandboxed local tools in the selected workspace
 ```
 
-The Python modules separate CLI/session management, protocol conversion, transport, adapter handling, and filesystem safety. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The Python modules separate CLI/session management, legacy text-envelope conversion, native structured translation/state, transport, adapter handling, and filesystem safety. Structured certification currently covers `shell_command`; legacy mode retains its existing function/custom-tool support. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Upstream Attribution
 

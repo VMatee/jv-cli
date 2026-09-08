@@ -1,4 +1,4 @@
-"""JV username/password and jobs protocol. POSTs are never auto-retried."""
+"""JV authentication plus legacy jobs and structured Responses transport."""
 from __future__ import annotations
 
 import email.utils
@@ -32,6 +32,7 @@ MAX_TOTAL_BYTES = 100 * 1024 * 1024
 MAX_FILES = 10
 PRODUCT_VERSION = (Path(__file__).resolve().parents[2] / "VERSION").read_text(encoding="utf-8").strip()
 STATUSES = {"queued", "dispatching", "waiting_for_provider", "running", "waiting_for_auth", "succeeded", "failed"}
+RESPONSE_STATUSES = {"queued", "in_progress", "completed", "failed"}
 NETWORK_ERRORS = (urllib.error.URLError, TimeoutError, ConnectionError, socket.timeout, http.client.HTTPException)
 
 
@@ -286,6 +287,124 @@ class JvApiClient:
             except NETWORK_ERRORS:
                 raise SubmissionUncertain("Job submission connection failed; the job may already exist. Do not repeat automatically") from None
         return payload
+
+    @staticmethod
+    def _validate_response(payload: dict[str, Any], expected_id: str | None = None) -> None:
+        if not _validate_id(payload.get("id")):
+            raise JvError("JV API returned an invalid response ID")
+        if expected_id is not None and payload["id"] != expected_id:
+            raise JvError("JV API returned a mismatched response ID")
+        if (payload.get("object") != "response" or not isinstance(payload.get("status"), str)
+                or payload.get("status") not in RESPONSE_STATUSES):
+            raise JvError("JV API returned an unsupported response object")
+        output = payload.get("output")
+        if not isinstance(output, list):
+            raise JvError("JV API returned an invalid response output")
+        status = payload["status"]
+        if status in {"queued", "in_progress", "failed"} and output:
+            raise JvError("A nonterminal or failed JV response exposed output")
+        if status == "completed" and len(output) != 1:
+            raise JvError("A completed JV response must contain exactly one output item")
+        if status == "completed" and payload.get("error") is not None:
+            raise JvError("A completed JV response unexpectedly included an error")
+
+    @staticmethod
+    def _idempotency_key(value: str) -> str:
+        if (not isinstance(value, str) or not 1 <= len(value) <= 128 or not value.isascii()
+                or not re.fullmatch(r"[A-Za-z0-9_.:-]+", value)):
+            raise JvError("Invalid structured response idempotency key")
+        return value
+
+    @staticmethod
+    def normalized_response_body(body: dict[str, Any]) -> bytes:
+        if not isinstance(body, dict):
+            raise JvError("Structured response body must be an object")
+        try:
+            raw = json.dumps(body, ensure_ascii=False, sort_keys=True,
+                             separators=(",", ":"), allow_nan=False).encode("utf-8")
+        except (TypeError, ValueError, UnicodeError):
+            raise JvError("Structured response body is not valid JSON") from None
+        if not raw or len(raw) > 100 * 1024:
+            raise JvError("Structured response body exceeds the 100 KiB pilot limit")
+        return raw
+
+    def create_response(self, body: dict[str, Any], idempotency_key: str) -> dict:
+        """Submit one exact structured round; callers reconcile uncertain POSTs."""
+        key = self._idempotency_key(idempotency_key)
+        raw = self.normalized_response_body(body)
+        headers = {**self._headers(True), "Content-Type": "application/json",
+                   "Idempotency-Key": key}
+        request = urllib.request.Request(self.base_url + "/v1/responses", data=raw,
+                                         headers=headers, method="POST")
+        try:
+            with self._open(request) as response:
+                if response.status not in (200, 202):
+                    raise SubmissionUncertain(
+                        f"Structured response submission outcome uncertain; reuse idempotency key {key}")
+                try:
+                    payload = self._read_json(response)
+                    self._validate_response(payload)
+                except JvError:
+                    raise SubmissionUncertain(
+                        f"HTTP {response.status} returned invalid response metadata; "
+                        f"reuse idempotency key {key}") from None
+        except urllib.error.HTTPError as exc:
+            error = self._http_error("Structured response submission", exc)
+            if 400 <= error.status < 500 and error.status != 408:
+                raise error from None
+            raise SubmissionUncertain(
+                f"Structured response submission outcome uncertain; reuse idempotency key {key}") from None
+        except NETWORK_ERRORS:
+            raise SubmissionUncertain(
+                f"Structured response submission connection failed; reuse idempotency key {key}") from None
+        return payload
+
+    def get_response(self, response_id: str, timeout=None) -> dict:
+        if not _validate_id(response_id):
+            raise JvError("Invalid response ID")
+        request = urllib.request.Request(
+            self.base_url + f"/v1/responses/{response_id}", headers=self._headers(True))
+        try:
+            with self._open(request, timeout) as response:
+                if response.status != 200:
+                    raise HttpError("Structured response polling", response.status)
+                payload = self._read_json(response)
+        except urllib.error.HTTPError as exc:
+            raise self._http_error("Structured response polling", exc) from None
+        except NETWORK_ERRORS:
+            raise NetworkError("JV structured response polling failed") from None
+        self._validate_response(payload, response_id)
+        return payload
+
+    def wait_for_response(self, response_id: str, *, cancel: threading.Event | None = None,
+                          progress: Callable[[dict], None] | None = None) -> dict:
+        cancel = cancel if cancel is not None else threading.Event()
+        deadline = time.monotonic() + self.config.wait_timeout
+        errors = 0
+        while True:
+            if cancel.is_set():
+                raise Cancelled(
+                    f"Stopped waiting for {response_id}; the remote response is not cancelled")
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise JvError(
+                    f"Timed out waiting for {response_id}; the remote response is not cancelled")
+            try:
+                payload = self.get_response(
+                    response_id, timeout=min(remaining, self.config.request_timeout))
+                errors = 0
+                if progress:
+                    progress(payload)
+                if payload["status"] in {"completed", "failed"}:
+                    return payload
+                delay = self.config.poll_interval
+            except JvError as exc:
+                errors += 1
+                if not getattr(exc, "retryable", False) or errors >= self.config.max_poll_errors:
+                    raise
+                delay = max(min(30.0, self.config.poll_interval * 2 ** min(errors - 1, 5)),
+                            getattr(exc, "retry_after", 0.0))
+            cancel.wait(min(delay, max(0, deadline - time.monotonic())))
 
     def get_job(self, job_id: str, timeout=None) -> dict:
         if not _validate_id(job_id):

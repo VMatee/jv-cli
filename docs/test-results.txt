@@ -1,8 +1,13 @@
-JV CLI 0.3.3 terminal-readability validation (2026-09-06)
+JV CLI 0.4.0 structured release-candidate validation (2026-09-08)
 
-228 tests run: 227 passed, 1 skipped, 0 failed
+247 tests run: 246 passed, 1 skipped, 0 failed
 1 environment-specific test skipped on Python 3.10 (tomllib is Python 3.11+)
-Real pinned-engine acceptance: PASS (13/13 default checks)
+Real pinned-engine acceptance: PASS (14/14 default checks)
+Structured real-engine loopback shell continuation: PASS (2 rounds, 0 repairs)
+Structured production client acceptance: PASS (operator run audited; 2 rounds, exit 0, 0 repairs)
+Structured mode: OPT-IN with JVCLI_AGENT_API=1
+Certified structured tools: shell_command (command argument)
+Legacy /v1/jobs and job/download regressions: PASS
 Compact/verbose output and visible failures: PASS
 TTY prose, code preservation and unchanged JSONL output: PASS
 Waiting-status deduplication: PASS
@@ -15,7 +20,7 @@ Package manifest verification: PASS
 Deterministic release build: PASS
 Extracted release verification: PASS
 Fresh temporary-HOME install, version, and doctor: PASS
-Live JV API: NOT RUN for this patch; scripted model responses used
+Live JV API: one controlled production structured flow passed; no repeat inference during audit
 Rust installation: NOT PERFORMED; no other project's toolchain used
 User demo project: NOT MODIFIED
 Per-job timeout default: 300 seconds; configurable via JVCLI_WAIT_TIMEOUT

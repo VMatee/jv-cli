@@ -1,5 +1,49 @@
 # JV CLI test report
 
+## Structured 0.4.0 candidate work — 2026-09-08
+
+Baseline JV CLI commit: `278b0c86999f909cb39d8693d3c4b7b27eaa662c`; baseline source version was 0.3.3. After the structured implementation and controlled live acceptance passed, the release-candidate source was promoted to 0.4.0. The supplied local protocol-reference checkout was absent, so the public repository was read directly at immutable commit `73198196ef9f924cfcb08a93421f1fe6aa0aae7d`. The engine remains pinned to 0.149.1.
+
+The automated suite ran 247 cases: 246 passed, one skipped because this Python 3.10 runtime lacks `tomllib`, and zero failed. New coverage exercises structured POST headers and mandatory fields, 202 creation, 200 replay, polling transitions, terminal/no-output invariants, malformed IDs/items/arguments, strict tool translation, exact continuation state, durable idempotency, ambiguous-POST reconciliation, same-key body binding, duplicate-publication prevention, unresolved restarts, replayed response/call IDs, persistence failure, opt-in configuration and unsupported inputs/tools. Existing `/v1/jobs`, job inspection/download, installation and session regressions remain passing.
+
+Package verification covered 56 source/documentation files. Consecutive builds were byte-identical; checksum and archive inventory passed. An extracted archive passed verification, and a fresh temporary-HOME installation passed version and doctor checks using the repository's existing pinned engine through an explicit engine path. No engine download or update of the user's installed JV CLI was performed.
+
+All 14 default real-engine checks passed with the real local `@openai/codex@0.149.1` binary. The new check captures the pinned engine's actual full-history requests and completes two scripted structured rounds through the authenticated loopback adapter: one validated `shell_command`, actual local fixture output, exact `call_id`, `previous_response_id`, resent instructions/tools, final message and zero client prompt repairs. This check uses scripted loopback model output and does not contact JV Server.
+
+Structured mode remains opt-in through `JVCLI_AGENT_API=1`. The only certified remote-declared client tool is `shell_command` with its required string `command` argument; the engine remains the local executor and enforces its sandbox/network policy. Custom/freeform patch calls, hosted/MCP/web/image tools, non-text input, parallel calls, remote streaming, usage/reasoning exposure and full Responses compatibility remain unsupported. Legacy `/v1/jobs`, attachments, conversation IDs, generated-file downloads and text-agent correction behavior remain available and default.
+
+The operator subsequently completed the controlled production client acceptance. The final audit below supersedes the earlier credential-blocked live status. The live run itself reported version 0.3.3; the source was promoted to 0.4.0 only after that evidence was audited, without repeating production inference.
+
+### Final production structured acceptance — 2026-09-08
+
+Result: PASS for the scoped two-round shell flow. The operator ran the repository source with `JVCLI_AGENT_API=1`, read-only mode and tool networking disabled against `https://ai.openjvspace.com`. Audit evidence consists of the existing private structured journal, session metadata, generated engine configuration, Codex execution history and the operator's terminal result. No additional production inference or server change was needed. No credentials, authentication headers, raw provider transcripts or hidden reasoning are included here.
+
+Source HEAD was `278b0c86999f909cb39d8693d3c4b7b27eaa662c` with the uncommitted structured implementation described above; the implementation is not represented by that baseline commit alone. Protocol-reference revision: `73198196ef9f924cfcb08a93421f1fe6aa0aae7d`. JV CLI version: 0.3.3. The live Codex session metadata records engine version **0.149.1**, provider `jv`, originator `codex_exec`, and working directory `/tmp/tmp.w6gH0t7nMC`. Its generated configuration selects the authenticated loopback Responses provider, read-only sandbox, disabled tool networking and isolated session engine HOME.
+
+| Evidence | Audited result |
+| --- | --- |
+| First response | `cj_75d768bfe05a45879e33d37e5ec083b1_20260908T075947360399Z` — completed; journal phase `continued` |
+| Published call ID | `call_2d3a632aac602e262bedd435a9223c75` |
+| Tool and arguments | `shell_command`, `{"command":"cat fixture.txt"}` |
+| Local execution | One matching Codex function call and one function output; exit 0 |
+| Harmless fixture stdout | `JV-STRUCTURED-LIVE-TEST-20260908` followed by a newline |
+| Continuation | Exact first response ID in `previous_response_id`; exact published call ID in `function_call_output` |
+| Second response | `cj_4d21572f585749dfad3abd685e2dfb38_20260908T080002919928Z` — completed; journal phase `final` |
+| Final assistant text | Exactly `JV-STRUCTURED-LIVE-TEST-20260908`, present in both structured state and Codex task completion |
+| JV CLI exit | 0, recorded in session metadata and confirmed by the operator |
+| Model rounds / client prompt repairs | 2 / 0 |
+| Unresolved published calls / nonterminal responses | 0 / 0 |
+
+The entire Codex function output, including exit status, timing wrapper and fixture stdout, matches the continuation input byte for byte. Its canonical SHA-256 matches the digest saved on the first round. Both rounds have distinct, valid durable idempotency keys and normalized request bodies with `model=jv-ai`, `background=true`, `store=true`, `stream=false` and `parallel_tool_calls=false`. Instructions and the admitted shell schema were resent. There is no recorded uncertain-submission replay. Keys themselves are omitted from this report.
+
+The selected processor submits to `/v1/responses` and polls `/v1/responses/{id}`; it never routes this flow through legacy `/v1/jobs`, `build_jv_prompt`, `parse_agent_output` or repair jobs. The journal records terminal completion for both rounds, and implementation validation/persistence precedes executable publication. Individual HTTP polling transitions are not retained by the journal, so this is implementation plus terminal-state evidence rather than a retained HTTP trace. No server-side audit log was needed or inspected.
+
+The journal and Codex history contain exactly one executable call and one matching local result, with no evidence of duplicate publication or execution in this run. The fixture remains unchanged. This scoped proof does not claim exactly-once side effects across every crash boundary: an unresolved publication can require reconciliation, and a local timeout does not cancel remote work.
+
+The audited code/tests match the manifest from the prior validation. The retained test log confirms **247 tests: 246 passed, one skipped, zero failed**; the retained real-engine report confirms **14/14 checks passed**. No implementation code changed during this audit, so no broad regression rerun or provider call was necessary. Legacy jobs, attachments, conversation support, inspection/downloads, authentication isolation, workspace protections and network policy remain covered by those regressions. Structured mode remains opt-in. The user's installed JV CLI and JV Server were not modified, and Codex was not upgraded.
+
+Recommendation: ready for a subsequent explicit 0.4.0 release-candidate step with the current shell-only pilot scope and opt-in rollout. Additional tools, broader workloads, every crash boundary and full Responses compatibility are not certified by this acceptance.
+
 ## 0.3.3 validation — 2026-09-06
 
 Automated suite: 228 cases, 227 passed, one skipped (Python 3.10 lacks tomllib), zero failed. Sixteen new regressions cover compact and verbose command display, visible failure output, unknown exit statuses, file-list layout, TTY prose wrapping, unchanged redirected text, preservation of code/URLs/tables, terminal-control sanitization, waiting-status deduplication, verbose flag placement, final-answer instructions and JSONL output with verbose enabled.

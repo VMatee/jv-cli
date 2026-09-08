@@ -1,6 +1,6 @@
 # Upstream references and scope
 
-Reviewed for this release on 2026-09-05.
+Reviewed for this candidate on 2026-09-08.
 
 ## Codex engine
 
@@ -20,11 +20,14 @@ The binary is installed on the user's host, not bundled in this ZIP. Its own pac
 ## JV API
 
 - Repository: https://github.com/VMatee/jv-llm-api-example
+- Structured contract commit reviewed: `73198196ef9f924cfcb08a93421f1fe6aa0aae7d`
+- Structured protocol: https://github.com/VMatee/jv-llm-api-example/blob/main/docs/responses-api.md
+- Structured Python reference: https://github.com/VMatee/jv-llm-api-example/blob/main/python/jv_responses_example.py
 - Python reference: https://github.com/VMatee/jv-llm-api-example/blob/main/python/jv_api_example.py
 - Rust jobs reference: https://github.com/VMatee/jv-llm-api-example/blob/main/rust/src/jobs.rs
 - Rust authentication: https://github.com/VMatee/jv-llm-api-example/blob/main/rust/src/auth.rs
 - Default origin: https://ai.openjvspace.com
 
-HTTP contract implemented: username/password login, temporary bearer token, X-JV-CSRF header, multipart job submission, queued/running/succeeded/failed polling, explicit conversation continuation in direct API mode, authenticated response-file downloads, logout. This package does not change or deploy the server.
+HTTP contract implemented: username/password login, temporary bearer token, X-JV-CSRF header, legacy multipart jobs/polling/conversation continuation/downloads, and opt-in asynchronous structured Responses creation/polling/function continuation with durable idempotency. This package does not change or deploy the server.
 
 The reference is a moving main branch. Compatibility was reviewed from published source; no live credentials were available for validating deployment-specific behavior. The Rust client code is not vendored and this ZIP does not update that GitHub repository.

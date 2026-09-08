@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0 — 2026-09-08
+
+- Add an opt-in `JVCLI_AGENT_API=1` transport for the asynchronous structured `POST /v1/responses` and `GET /v1/responses/{id}` pilot while preserving `/v1/jobs` as the default and retaining direct job/download commands.
+- Translate the pinned Codex engine's actual full-history Responses requests into native JV messages, one certified `shell_command` function schema, and exact `function_call_output` continuations with `previous_response_id`.
+- Persist normalized bodies, per-round idempotency keys, response/call state and publication state atomically before submission/tool exposure. Reconcile ambiguous POSTs with the same key/body and fail safely on unresolved restart state instead of blindly republishing a tool.
+- Validate complete lifecycle envelopes, IDs, one-item completed output, declared tools, strict JSON arguments and continuation history. Structured mode performs zero text-envelope prompt repairs and does not expose raw provider text or reasoning.
+- Keep Codex pinned to 0.149.1 and preserve authentication, loopback protection, sandbox/network policy, credential isolation, legacy attachments/generated files and installation boundaries.
+
 ## 0.3.3 — 2026-09-06
 
 - Make normal terminal output compact: preview long scripts, separate changed files and distinguish successful, failed and unknown command exits.

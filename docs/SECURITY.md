@@ -22,6 +22,12 @@ The adapter binds only to 127.0.0.1 on an ephemeral port, requires a cryptograph
 
 ## Model actions and data handling
 
+Legacy coding mode remains the default and retains the strict text-envelope behavior described below. Opt-in structured mode (`JVCLI_AGENT_API=1`) does not use that envelope or its repair prompts. It sends native text messages plus the certified `shell_command` function schema to JV's asynchronous Responses API and accepts exactly one completed assistant message or function call.
+
+Before a structured POST, JV CLI atomically records a unique idempotency key and normalized request body. An ambiguous POST is reconciled only by replaying that same body with that same key. Polling is repeatable; local timeouts do not cancel server work. Response IDs, output IDs, call IDs, lifecycle state, declared tool name, JSON arguments and continuation history are validated before any executable event is published.
+
+A structured tool call is journaled as published before it reaches Codex. Repeated polling or a repeated local request cannot publish it twice. A restart with an unresolved published call fails safely unless Codex supplies the exact call and a matching `function_call_output`; changed or unexpected IDs/calls/results are rejected. This prevents blind duplicate execution but is not a claim of exactly-once local side effects: a crash can leave the client requiring manual reconciliation.
+
 Only whole JSON objects or fenced JSON envelopes can request tools. Arbitrary prose containing a JSON example is not scanned for execution. Tool names must have been offered to that request; namespaces, required fields and basic argument types are checked. This is not a complete JSON Schema validator. The engine's own validation and sandbox remain important.
 
 A single complete fenced block may have the standalone language label `JSON` immediately before it. This narrowly handles the service's observed code-block presentation; surrounding explanations, multiple blocks and malformed/truncated JSON do not become executable tools. Code contents are not Markdown-decoded to reconstruct lost underscores, quotes or indentation.
@@ -37,6 +43,8 @@ The launcher sends selected code, instructions and command outputs to the config
 ## Retry and cancellation
 
 Job creation is not automatically retried: a lost/invalid response might mean the job already exists. Polling GET requests use bounded retry/backoff and respect Retry-After without shortening it. Cancellation stops local waiting and the local agent process group; it does not implement a server cancellation endpoint. Inspect the last job ID before resubmitting. Processes intentionally detached from the process group and server-created jobs can outlive the CLI.
+
+Structured creation differs because the public contract supplies idempotency. The client may make one immediate reconciliation replay after an ambiguous POST, using the already-persisted key and byte-equivalent normalized body. Further invocation resumes that same prepared/submitted round; it never invents a new key for the uncertain work. A new continuation receives a new key.
 
 ## Downloads
 

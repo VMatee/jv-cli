@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT / 'lib'))
 from jvcli import cli
 from jvcli.adapter import AdapterRuntime
 from jvcli.safety import JvError, atomic_write, private_dir
+from jvcli.structured import STRUCTURED_AGENT_INSTRUCTIONS, StructuredProcessor
 from jvcli.transport import JvClientConfig
 
 
@@ -48,6 +49,80 @@ class ScriptedClient:
     def wait_for_job(self, key, **kwargs):
         return {'id': key, 'conversation_id': kwargs.get('conversation_id'), 'status': 'succeeded',
                 'answer': self.pending[key], 'response': {'files': []}}
+
+
+class StructuredScriptedClient:
+    _token = None
+    base_url = 'http://127.0.0.1'
+
+    def __init__(self, command, marker):
+        self.command = command
+        self.marker = marker
+        self.config = JvClientConfig(request_timeout=1, wait_timeout=5, poll_interval=.01)
+        self.posts = []
+
+    def create_response(self, body, key):
+        self.posts.append((body, key))
+        if len(self.posts) == 1:
+            required = {'model': 'jv-ai', 'background': True, 'store': True,
+                        'stream': False, 'parallel_tool_calls': False}
+            if any(body.get(name) != value for name, value in required.items()):
+                raise JvError('Structured engine check lost a mandatory remote field')
+            if [(item.get('type'), item.get('name')) for item in body.get('tools', [])] != [
+                    ('function', 'shell_command')]:
+                raise JvError('Structured engine check did not isolate the certified shell tool')
+            if 'RESPONSE CONTRACT' in body.get('instructions', ''):
+                raise JvError('Structured mode used the legacy text-agent instructions')
+            return {'id': 'response_engine_1', 'object': 'response', 'status': 'completed',
+                    'error': None, 'output': [{
+                        'type': 'function_call', 'id': 'fc_engine_1',
+                        'call_id': 'call_engine_1', 'status': 'completed',
+                        'name': 'shell_command',
+                        'arguments': json.dumps({'command': self.command})}]}
+        if len(self.posts) == 2:
+            item = body.get('input', [{}])[0]
+            if (body.get('previous_response_id') != 'response_engine_1'
+                    or item.get('type') != 'function_call_output'
+                    or item.get('call_id') != 'call_engine_1'
+                    or self.marker not in item.get('output', '')):
+                raise JvError('Actual structured shell result did not reach the continuation')
+            if (not body.get('tools')
+                    or body.get('instructions', '').strip() != STRUCTURED_AGENT_INSTRUCTIONS.strip()):
+                raise JvError('Structured continuation did not resend tools and instructions')
+            return {'id': 'response_engine_2', 'object': 'response', 'status': 'completed',
+                    'error': None, 'output': [{
+                        'type': 'message', 'id': 'msg_engine_2', 'status': 'completed',
+                        'role': 'assistant', 'content': [{
+                            'type': 'output_text', 'text': 'STRUCTURED_ENGINE_OK',
+                            'annotations': []}]}]}
+        raise JvError('Engine requested an unexpected extra structured inference')
+
+
+def run_structured_case(engine, folder, command, marker):
+    client = StructuredScriptedClient(command, marker)
+    processor = StructuredProcessor(client, folder / 'structured')
+    runtime = AdapterRuntime(client, heartbeat=.5, processor=processor)
+    output, errors = io.StringIO(), io.StringIO()
+    try:
+        port = runtime.start()
+        overrides = cli._write_engine_config(folder, port, structured=True)
+        runtime.begin_turn()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            rc, _ = cli._run_engine(
+                engine, 'Read smoke.txt with shell_command once, then report success.', None,
+                session_dir=folder, overrides=overrides, runtime=runtime, turn_timeout=90)
+        if (rc != 0 or output.getvalue().strip() != 'STRUCTURED_ENGINE_OK'
+                or len(client.posts) != 2 or runtime.response_repairs != 0):
+            raise JvError(
+                f'structured Responses engine flow failed (exit {rc}):\n'
+                f'{errors.getvalue()[-5000:]}\n{output.getvalue()[-1000:]}')
+        state = json.loads((folder / 'structured/state.json').read_text())
+        if [item['phase'] for item in state['rounds']] != ['continued', 'final']:
+            raise JvError('Structured engine flow did not persist continuation state')
+        return {'response_ids': ['response_engine_1', 'response_engine_2'],
+                'call_id': 'call_engine_1', 'rounds': 2, 'client_prompt_repairs': 0}
+    finally:
+        runtime.close()
 
 
 def run_case(engine, folder, name, steps, *, thread_id=None, read_only=False,
@@ -100,6 +175,10 @@ def main():
         marker = 'actual-file-data-' + uuid.uuid4().hex
         (workspace / 'smoke.txt').write_text(marker)
         os.chdir(workspace)
+        report['structured_flow'] = run_structured_case(
+            engine, private_dir(report_dir / 'structured-session'),
+            'cat smoke.txt', marker)
+        checks['structured_responses_shell_continuation'] = True
         thread = run_case(engine, session, 'read an actual file', [
             ({'type':'tool_call','name':'shell_command','arguments':{'command':'cat smoke.txt'}},None),
             ({'type':'final','text':'READ_OK'},marker)])

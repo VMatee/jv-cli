@@ -18,6 +18,21 @@ from jvcli.safety import JvError
 
 
 class CliHardening(unittest.TestCase):
+    def test_structured_transport_is_explicitly_opt_in(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(cli._structured_enabled())
+        with patch.dict(os.environ, {'JVCLI_AGENT_API': '1'}, clear=True):
+            self.assertTrue(cli._structured_enabled())
+        with patch.dict(os.environ, {'JVCLI_AGENT_API': 'yes'}, clear=True):
+            with self.assertRaises(JvError):
+                cli._structured_enabled()
+        with tempfile.TemporaryDirectory() as td:
+            legacy, structured = Path(td) / 'legacy', Path(td) / 'structured'
+            cli._write_engine_config(legacy, 1234)
+            cli._write_engine_config(structured, 5678, structured=True)
+            self.assertIn('RESPONSE CONTRACT', (legacy / 'instructions.md').read_text())
+            self.assertNotIn('RESPONSE CONTRACT', (structured / 'instructions.md').read_text())
+
     def test_network_flags_across_interactive_exec_and_resume(self):
         for suffix in ([], ['exec', 'inspect'], ['resume', 'test-session']):
             for flag, value in (('--allow-network', True), ('--no-network', False)):

@@ -25,6 +25,7 @@ import warnings
 
 from .adapter import AdapterRuntime
 from .protocol import BASE_AGENT_INSTRUCTIONS, MAX_RESPONSE_REPAIRS
+from .structured import STRUCTURED_AGENT_INSTRUCTIONS, StructuredProcessor
 from .safety import (JvError, atomic_write, no_symlink_path, positive_number,
                      private_dir, read_private_json, redact, redact_data, strict_json, terminal_text)
 from .transport import DEFAULT_BASE_URL, JvApiClient, JvClientConfig, validate_base_url
@@ -180,7 +181,14 @@ def _toml(value):
     raise JvError('Unsupported configuration value')
 
 
-def _model_catalog():
+def _structured_enabled():
+    value = os.environ.get('JVCLI_AGENT_API', '0')
+    if value not in ('0', '1'):
+        raise JvError('JVCLI_AGENT_API must be 0 or 1')
+    return value == '1'
+
+
+def _model_catalog(structured=False):
     # Pinned-engine schema. This is adapter capacity metadata, not a claim about
     # the actual server-assigned model's context capacity.
     return {'models': [{'slug': 'jv-local', 'display_name': 'JV Local', 'description': 'JV job API adapter',
@@ -189,10 +197,11 @@ def _model_catalog():
         'upgrade': None, 'support_verbosity': False, 'default_verbosity': None,
         'apply_patch_tool_type': 'freeform', 'truncation_policy': {'mode': 'tokens', 'limit': 10000},
         'context_window': 32768, 'experimental_supported_tools': [], 'tool_mode': 'direct',
-        'base_instructions': BASE_AGENT_INSTRUCTIONS}]}
+        'base_instructions': STRUCTURED_AGENT_INSTRUCTIONS if structured else BASE_AGENT_INSTRUCTIONS}]}
 
 
-def _write_engine_config(session_dir, port, read_only=False, allow_network=False):
+def _write_engine_config(session_dir, port, read_only=False, allow_network=False,
+                         structured=False):
     # SSE comments do not reset the pinned engine's event-idle deadline.
     # Leave room for the initial job plus two bounded correction jobs, their
     # submissions, and delivery of the final response/error. Job/turn deadlines
@@ -205,8 +214,9 @@ def _write_engine_config(session_dir, port, read_only=False, allow_network=False
     tmp = private_dir(session_dir / 'tmp')
     catalog = session_dir / 'model_catalog.json'
     instructions = session_dir / 'instructions.md'
-    atomic_write(catalog, json.dumps(_model_catalog(), indent=2) + '\n')
-    atomic_write(instructions, BASE_AGENT_INSTRUCTIONS)
+    agent_instructions = STRUCTURED_AGENT_INSTRUCTIONS if structured else BASE_AGENT_INSTRUCTIONS
+    atomic_write(catalog, json.dumps(_model_catalog(structured), indent=2) + '\n')
+    atomic_write(instructions, agent_instructions)
     config = {
         'model': 'jv-local', 'model_provider': 'jv', 'model_catalog_json': str(catalog),
         'model_instructions_file': str(instructions), 'approval_policy': 'never',
@@ -579,6 +589,8 @@ def _run_session(prompt=None, *, resume=None, read_only=False, allow_network=Non
     if actual != ENGINE_VERSION:
         raise JvError(f'Engine {actual} is not the pinned {ENGINE_VERSION}; run ./install.sh. No automatic downgrade is performed at runtime')
     base, user = _resolve_account()
+    structured = _structured_enabled()
+    transport_mode = 'structured' if structured else 'legacy'
     sid = resume or _session_id()
     session_dir = _session_directory(sid)
     metadata = read_private_json(session_dir / 'session.json') if resume else {}
@@ -586,6 +598,8 @@ def _run_session(prompt=None, *, resume=None, read_only=False, allow_network=Non
         raise JvError('Saved JV session was not found')
     if resume and (metadata.get('workspace') != str(workspace) or metadata.get('username') != user or metadata.get('base_url') != base):
         raise JvError('Resume must use the same project directory, API origin and username as the saved session')
+    if resume and metadata.get('transport_mode', 'legacy') != transport_mode:
+        raise JvError('Resume must use the same legacy/structured transport mode as the saved session')
     private_dir(session_dir)
     install_fd = os.open(STATE_DIR / 'install.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:
@@ -606,13 +620,20 @@ def _run_session(prompt=None, *, resume=None, read_only=False, allow_network=Non
         max_requests = int(positive_number(os.environ.get('JVCLI_MAX_REQUESTS', '40'), 'JVCLI_MAX_REQUESTS', 500))
         turn_timeout = positive_number(os.environ.get('JVCLI_TURN_TIMEOUT', '3600'), 'JVCLI_TURN_TIMEOUT')
         client, user = _login_client(user, base)
-        runtime = AdapterRuntime(client, max_requests=max_requests)
+        try:
+            processor = StructuredProcessor(client, session_dir / 'structured') if structured else None
+        except Exception:
+            _logout(client)
+            raise
+        runtime = AdapterRuntime(client, max_requests=max_requests, processor=processor)
         thread_id = metadata.get('thread_id')
         metadata = {'session_id': sid, 'workspace': str(workspace), 'username': user, 'base_url': base,
+                    'transport_mode': transport_mode,
                     'thread_id': thread_id, 'created_at': metadata.get('created_at', datetime.datetime.now(datetime.timezone.utc).isoformat())}
         try:
             port = runtime.start()
-            overrides = _write_engine_config(session_dir, port, read_only, allow_network)
+            overrides = _write_engine_config(session_dir, port, read_only, allow_network,
+                                             structured=structured)
             atomic_write(session_dir / 'session.json', json.dumps(metadata, indent=2) + '\n')
             say(f'JV CLI {VERSION}\nWorkspace: {workspace}\nSession: {sid}\nSandbox: {"read-only" if read_only else "workspace-write"}; tool network: {"enabled" if allow_network else "disabled"}')
             say('Only use trusted projects. The selected workspace may be changed; installation isolation is not a VM.')
@@ -644,7 +665,9 @@ def _run_session(prompt=None, *, resume=None, read_only=False, allow_network=Non
                             'Installation and engine state are isolated; this is not a VM or a guarantee that other files cannot be read.')
                         continue
                     if task == '/status':
-                        say(f'Session: {sid}\nThread: {thread_id or "new"}\nState: {runtime.status}\nLast JV job: {runtime.last_job_id or "none"}')
+                        say(f'Session: {sid}\nThread: {thread_id or "new"}\nState: {runtime.status}\n'
+                            f'Transport: {transport_mode}\nLast JV job: {runtime.last_job_id or "none"}\n'
+                            f'Last JV response: {runtime.last_response_id or "none"}')
                         continue
                     if task == '/new':
                         if runtime.lock.locked():
@@ -664,6 +687,7 @@ def _run_session(prompt=None, *, resume=None, read_only=False, allow_network=Non
                     thread_id = new_thread
                     metadata['thread_id'] = thread_id
                 metadata['last_job_id'] = runtime.last_job_id
+                metadata['last_response_id'] = runtime.last_response_id
                 metadata['last_exit_code'] = rc
                 metadata['model_requests'] = runtime.requests
                 metadata['response_repairs'] = runtime.response_repairs

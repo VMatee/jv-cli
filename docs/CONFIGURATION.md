@@ -33,6 +33,7 @@ jvcli logout
 | `JVCLI_WAIT_TIMEOUT` | 300 seconds (5 minutes) per model job's polling deadline |
 | `JVCLI_TURN_TIMEOUT` | 3600 seconds for a coding turn |
 | `JVCLI_MAX_REQUESTS` | 40 model requests per turn, maximum 500 |
+| `JVCLI_AGENT_API` | `0`; set exactly `1` to opt into structured `/v1/responses` |
 
 Time values must be finite and positive. Request socket timeouts are not a guarantee against every slow-response/OS scheduling condition; cancellation is best-effort for an already-blocked network operation.
 
@@ -42,13 +43,14 @@ To change the per-call wait later, for example to ten minutes:
 JVCLI_WAIT_TIMEOUT=600 jvcli --allow-network
 ```
 
-The engine SSE deadline automatically accommodates the initial job plus up to two correction jobs and submission overhead. This prevents its former two-minute stream cutoff from preempting the job deadline. Each correction is a separate job with the same polling limit; the whole coding turn still has its independent `JVCLI_TURN_TIMEOUT`. A timeout stops local waiting, not the remote job. Server status `waiting_for_auth` requires server-side investigation; extra waiting cannot authenticate its provider.
+The engine SSE deadline accommodates the legacy initial job plus up to two correction jobs and submission overhead. Structured mode uses the same conservative local stream bound but performs no prompt-repair jobs. The whole coding turn still has its independent `JVCLI_TURN_TIMEOUT`. A timeout stops local waiting, not the remote job/response. Server-side authentication failures require operator investigation; extra waiting cannot authenticate a provider.
 
 HTTPS is required except loopback HTTP. Base origins must not contain embedded credentials, query, fragment or API paths. `/v1/...` routes are added by the client. Ambient proxies are disabled. TLS certificate verification is not disabled; private deployments must arrange trusted certificates separately.
 
 ## Defaults and limits
 
 - Pinned engine: 0.149.1; model alias: `jv-local`.
+- Legacy `/v1/jobs` remains the coding default. `JVCLI_AGENT_API=1` selects the structured pilot and must match when resuming a saved session.
 - Default: workspace-write with tool networking, no elevation approval, no automatic sandbox bypass.
 - `--read-only` requests denial of tool writes and disables tool networking.
 - `--no-network` disables tool networking in write mode; JV API traffic still requires networking.
@@ -60,6 +62,8 @@ HTTPS is required except loopback HTTP. Base origins must not contain embedded c
 - Model output: at most 8 tool calls in an envelope. A fourth identical action in a turn stops the loop.
 - Invalid completed model responses: at most two correction jobs per response, also counted against `JVCLI_MAX_REQUESTS` and the turn timeout. Progress is shown; session metadata records `model_requests` and `response_repairs`. Additional jobs can consume service quota.
 - ID validation: ASCII letters, digits, hyphens and underscores. Other opaque-ID formats are unsupported.
+- Structured mode admits only the top-level `shell_command` function tool. Custom/freeform tools, hosted tools, MCP, image/audio input, remote streaming and parallel calls are not certified by this pilot.
+- Each structured logical round stores its normalized body, idempotency key, response ID and publication state privately under the session directory. State is bounded and atomically replaced.
 
 Some limits are deliberately conservative. The server can enforce stricter limits. The tool argument checker covers common types/required fields, not every JSON Schema keyword.
 

@@ -66,7 +66,8 @@ def rust_discovery_probe(command: str) -> bool:
 
 
 class AdapterRuntime:
-    def __init__(self, client: JvApiClient, max_requests: int = 40, heartbeat: float = 5.0):
+    def __init__(self, client: JvApiClient, max_requests: int = 40, heartbeat: float = 5.0,
+                 processor=None):
         if not 1 <= max_requests <= 500 or not 0 < heartbeat <= 30:
             raise JvError('Invalid adapter limits')
         self.client = client
@@ -80,12 +81,14 @@ class AdapterRuntime:
         self.cancel = threading.Event()
         self.status = 'idle'
         self.last_job_id: str | None = None
+        self.last_response_id: str | None = None
         self.last_error: str | None = None
         self.signatures: dict[str, int] = {}
         self.rust_discovery_probes = 0
         self.worker: threading.Thread | None = None
         self.notices = queue.SimpleQueue()
         self.response_repairs = 0
+        self.processor = processor
 
     def begin_turn(self):
         if self.lock.locked():
@@ -95,11 +98,14 @@ class AdapterRuntime:
         self.rust_discovery_probes = 0
         self.last_error = None
         self.last_job_id = None
+        self.last_response_id = None
         self.response_repairs = 0
         while not self.notices.empty():
             self.notices.get_nowait()
         self.cancel = threading.Event()
         self.status = 'waiting for agent'
+        if self.processor:
+            self.processor.begin_turn()
 
     def start(self) -> int:
         if self.server:
@@ -184,9 +190,12 @@ class AdapterRuntime:
                 if item['type'] == 'message':
                     item['content'][0]['text'] += note
                     break
-        # Validate the whole batch before committing counters or emitting tools.
-        # Changing whitespace, search roots or PATH must not permit the observed
-        # Rust discovery loop to consume the entire turn's model budget.
+        self.validate_action_items(items)
+        self.status = 'model response received'
+        return items
+
+    def validate_action_items(self, items: list[dict]) -> None:
+        """Commit loop counters only after every executable item validates."""
         signatures = self.signatures.copy()
         probes = self.rust_discovery_probes
         for item in items:
@@ -210,8 +219,12 @@ class AdapterRuntime:
                     'do not borrow another project\'s private tools.')
         self.signatures = signatures
         self.rust_discovery_probes = probes
-        self.status = 'model response received'
-        return items
+
+    def process_request(self, request: dict) -> list[dict]:
+        if self.processor:
+            return self.processor.infer(request, self)
+        prompt, catalog = build_jv_prompt(request)
+        return self.infer(request, prompt, catalog)
 
 
 class ResponsesAdapterHandler(BaseHTTPRequestHandler):
@@ -295,7 +308,6 @@ class ResponsesAdapterHandler(BaseHTTPRequestHandler):
                 raise ProtocolError('Invalid request or unknown model')
             if type(request.get('stream', True)) is not bool:
                 raise ProtocolError('stream must be a boolean')
-            prompt, catalog = build_jv_prompt(request)
             locked = self.runtime.lock.acquire(blocking=False)
             if not locked:
                 self._json_response(409, {'error': {'message': 'A model request is already in progress'}})
@@ -315,7 +327,7 @@ class ResponsesAdapterHandler(BaseHTTPRequestHandler):
 
                 def work():
                     try:
-                        result['items'] = self.runtime.infer(request, prompt, catalog)
+                        result['items'] = self.runtime.process_request(request)
                     except JvError as exc:
                         result['error'] = exc
                     except Exception:
@@ -336,7 +348,7 @@ class ResponsesAdapterHandler(BaseHTTPRequestHandler):
                 items = result['items']
                 self._finish_sse(response_id, items)
             else:
-                items = self.runtime.infer(request, prompt, catalog)
+                items = self.runtime.process_request(request)
                 self._json_response(200, {'id': response_id, 'object': 'response', 'status': 'completed', 'output': items})
         except (BrokenPipeError, ConnectionResetError, socket.timeout):
             self.runtime.cancel.set()
