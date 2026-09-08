@@ -1,6 +1,49 @@
 # JV CLI test report
 
-## Structured 0.4.0 candidate work — 2026-09-08
+## Current Codex parity integration — 2026-09-08
+
+Starting source: main at `d6b19df314cc2b6901059fe04ae1f8d3d361eecb`, VERSION 0.4.0.
+The version and pinned engine 0.149.1 remain unchanged. The full compatibility
+matrix, upstream source provenance, actual catalog, wire blockers and production
+limitations are in [CODEX_PARITY.md](CODEX_PARITY.md). This section supersedes the
+older subset descriptions below; their historical production evidence is not
+new acceptance of this integration.
+
+- Focused structured regressions: **38 passed**, no skips or failures.
+- Full regression: **267 run, 266 passed, 1 skipped, 0 failed** on Python 3.10.12.
+  The skip requires Python 3.11 `tomllib`.
+- Existing real pinned-engine suite: **14/14 passed**, including legacy patch,
+  resume, sandbox/write denial, network enabled/denied, and structured shell.
+- New real pinned-engine parity suite: **8/8 passed** with existing Google Chrome.
+  These cover local HTML/CSS/JS read/edit/build/test, update_plan and serial
+  continuation, actual initial-image bytes, image-backed resume, exact view_image
+  wire capture, and real browser screenshot/image-result capture.
+- Both engine suites use scripted loopback responses: **zero live inference**.
+  Image-result capture is not JV view_image transport acceptance or proof of
+  provider visual reasoning.
+- Manifest: **66 shipped source/documentation files**; ZIP: **67 entries** including
+  the manifest. Two byte-identical builds, checksum, inventory exclusions, fresh
+  extraction/verification, temporary-HOME installation, version and doctor checks
+  passed. The temporary installation used the existing pinned engine explicitly;
+  no runtime download or real user installation was changed.
+- An initial full run had four expected stale-manifest integrity errors; after
+  rebuilding the manifest the entire suite passed. No application regression
+  failure remained.
+
+Contract `52be8980e01828959df7712ddae17d077d69efcf` certifies image-bearing
+function results and exact custom apply_patch. Live custom apply_patch plus shell
+passed in three rounds with zero repairs and verified local output. Live initial
+image returned `Structured attachments are unavailable for this provider
+assignment`; view_image and the web screenshot loop were not submitted after that
+deterministic account limitation. Production image acceptance remains P0 for this
+account. Cross-user-turn JV conversation continuity and long-context/compaction
+certification remain P1.
+All source work is uncommitted/unpushed. No server/provider or installed-copy
+changes were made. This tree is **not ready for release-candidate preparation**
+because the required production image gates cannot run with this assignment.
+
+
+## Earlier structured 0.4.0 candidate work — 2026-09-08
 
 Baseline JV CLI commit: `278b0c86999f909cb39d8693d3c4b7b27eaa662c`; baseline source version was 0.3.3. After the structured implementation and controlled live acceptance passed, the release-candidate source was promoted to 0.4.0. The supplied local protocol-reference checkout was absent, so the public repository was read directly at immutable commit `73198196ef9f924cfcb08a93421f1fe6aa0aae7d`. The engine remains pinned to 0.149.1.
 
@@ -10,7 +53,7 @@ Package verification covered 56 source/documentation files. Consecutive builds w
 
 All 14 default real-engine checks passed with the real local `@openai/codex@0.149.1` binary. The new check captures the pinned engine's actual full-history requests and completes two scripted structured rounds through the authenticated loopback adapter: one validated `shell_command`, actual local fixture output, exact `call_id`, `previous_response_id`, resent instructions/tools, final message and zero client prompt repairs. This check uses scripted loopback model output and does not contact JV Server.
 
-Structured mode remains opt-in through `JVCLI_AGENT_API=1`. The only certified remote-declared client tool is `shell_command` with its required string `command` argument; the engine remains the local executor and enforces its sandbox/network policy. Custom/freeform patch calls, hosted/MCP/web/image tools, non-text input, parallel calls, remote streaming, usage/reasoning exposure and full Responses compatibility remain unsupported. Legacy `/v1/jobs`, attachments, conversation IDs, generated-file downloads and text-agent correction behavior remain available and default.
+At that earlier checkpoint, structured mode remained opt-in through `JVCLI_AGENT_API=1`. The only certified remote-declared client tool is `shell_command` with its required string `command` argument; the engine remains the local executor and enforces its sandbox/network policy. Custom/freeform patch calls, hosted/MCP/web/image tools, non-text input, parallel calls, remote streaming, usage/reasoning exposure and full Responses compatibility remain unsupported. Legacy `/v1/jobs`, attachments, conversation IDs, generated-file downloads and text-agent correction behavior remain available and default.
 
 The operator subsequently completed the controlled production client acceptance. The final audit below supersedes the earlier credential-blocked live status. The live run itself reported version 0.3.3; the source was promoted to 0.4.0 only after that evidence was audited, without repeating production inference.
 
@@ -143,6 +186,6 @@ The workflow targets Python 3.10 through 3.13. Hosted CI results are separate po
 
 ## Limitations
 
-Tests do not prove freedom from all defects or certify every Linux kernel. Coding mode replays bounded history into independent JV jobs rather than reusing server conversation IDs. True model token streaming, hosted tools, image/audio input, server-job cancellation, ARM64, Windows/macOS, and automatic release-based `jvcli update` are not implemented.
+Tests do not prove freedom from all defects or certify every Linux kernel. Coding mode replays bounded history into independent JV jobs rather than reusing server conversation IDs. True model token streaming, hosted tools, audio input, server-job cancellation, ARM64, Windows/macOS, and automatic release-based `jvcli update` are not implemented. Initial structured images are now supported as described in the latest parity audit.
 
 Checksums detect corruption but are not signatures. npm, GitHub release publishing, the configured JV API, and the user's selected projects remain trust boundaries.

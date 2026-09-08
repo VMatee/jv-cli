@@ -37,12 +37,15 @@ NETWORK_ERRORS = (urllib.error.URLError, TimeoutError, ConnectionError, socket.t
 
 
 class HttpError(JvError):
-    def __init__(self, operation: str, status: int, retry_after: float = 0):
+    def __init__(self, operation: str, status: int, retry_after: float = 0,
+                 public_detail: str = ""):
         detail = {401: "Sign in again; the credentials or token were rejected.",
                   403: "Access denied.", 404: "The job or conversation is unavailable to this account.",
                   409: "The conversation may already have an unfinished turn.",
                   413: "The request exceeds the server limit.",
                   429: "Rate limited; wait before submitting another request."}.get(status, "")
+        if public_detail:
+            detail = (detail + " " + public_detail).strip()
         super().__init__(f"{operation}: HTTP {status}. {detail}".strip())
         self.status = status
         self.retry_after = retry_after
@@ -162,7 +165,22 @@ class JvApiClient:
 
     @staticmethod
     def _http_error(operation, exc):
-        error = HttpError(operation, exc.code, _parse_retry_after(exc.headers.get("Retry-After")))
+        public_detail = ""
+        try:
+            raw = exc.read(4097)
+            if len(raw) <= 4096:
+                payload = strict_json(raw)
+                value = payload.get("error") if isinstance(payload, dict) else None
+                if (isinstance(value, dict) and isinstance(value.get("code"), str)
+                        and isinstance(value.get("message"), str)
+                        and re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", value["code"])
+                        and 0 < len(value["message"]) <= 1000
+                        and not re.search(r"(?i)authorization|bearer\s+|password|base64,", value["message"])):
+                    public_detail = f'{value["code"]}: {value["message"]}'
+        except (OSError, ValueError, UnicodeError, RecursionError):
+            pass
+        error = HttpError(operation, exc.code,
+                          _parse_retry_after(exc.headers.get("Retry-After")), public_detail)
         exc.close()
         return error
 
@@ -324,8 +342,10 @@ class JvApiClient:
                              separators=(",", ":"), allow_nan=False).encode("utf-8")
         except (TypeError, ValueError, UnicodeError):
             raise JvError("Structured response body is not valid JSON") from None
-        if not raw or len(raw) > 100 * 1024:
-            raise JvError("Structured response body exceeds the 100 KiB pilot limit")
+        from .images import MAX_IMAGE_REQUEST, validate_image_request
+        if not raw or len(raw) > MAX_IMAGE_REQUEST:
+            raise JvError("Structured response body exceeds the 17 MiB image request limit")
+        validate_image_request(body)
         return raw
 
     def create_response(self, body: dict[str, Any], idempotency_key: str) -> dict:

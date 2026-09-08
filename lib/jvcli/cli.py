@@ -378,7 +378,7 @@ def _stop_process(process):
 
 
 def _run_engine(engine, prompt, thread_id, *, session_dir=None, overrides=(), runtime=None,
-                json_mode=False, turn_timeout=3600, verbose=False):
+                json_mode=False, turn_timeout=3600, verbose=False, images=()):
     if not isinstance(prompt, str) or not prompt.strip() or len(prompt.encode()) > 100 * 1024:
         raise JvError('Prompt must be nonempty and no larger than 100 KiB')
     # Prompt travels over stdin, not process arguments or shell expansion.
@@ -388,6 +388,8 @@ def _run_engine(engine, prompt, thread_id, *, session_dir=None, overrides=(), ru
     command += ['--json', '--skip-git-repo-check', '--ignore-rules']
     if not thread_id:
         command += ['--color', 'never']
+    for image in images:
+        command += ['--image', str(image)]
     command += ['-']
     process = subprocess.Popen(command, env=_engine_env(session_dir, runtime.key if runtime else None),
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
@@ -576,7 +578,7 @@ def _session_directory(value):
     return no_symlink_path(STATE_DIR / 'runs' / value)
 
 
-def _run_session(prompt=None, *, resume=None, read_only=False, allow_network=None, json_mode=False, verbose=False):
+def _run_session(prompt=None, *, resume=None, read_only=False, allow_network=None, json_mode=False, verbose=False, images=()):
     workspace = _workspace_check(Path.cwd())
     if allow_network is None:
         allow_network = not read_only
@@ -590,6 +592,8 @@ def _run_session(prompt=None, *, resume=None, read_only=False, allow_network=Non
         raise JvError(f'Engine {actual} is not the pinned {ENGINE_VERSION}; run ./install.sh. No automatic downgrade is performed at runtime')
     base, user = _resolve_account()
     structured = _structured_enabled()
+    if images and not structured:
+        raise JvError('--image requires JVCLI_AGENT_API=1; legacy ask --file remains available')
     transport_mode = 'structured' if structured else 'legacy'
     sid = resume or _session_id()
     session_dir = _session_directory(sid)
@@ -619,6 +623,8 @@ def _run_session(prompt=None, *, resume=None, read_only=False, allow_network=Non
             raise JvError('This JV session is already open in another terminal') from None
         max_requests = int(positive_number(os.environ.get('JVCLI_MAX_REQUESTS', '40'), 'JVCLI_MAX_REQUESTS', 500))
         turn_timeout = positive_number(os.environ.get('JVCLI_TURN_TIMEOUT', '3600'), 'JVCLI_TURN_TIMEOUT')
+        from .images import snapshot_images
+        image_snapshots = snapshot_images(images, workspace, session_dir / 'images' / uuid.uuid4().hex)
         client, user = _login_client(user, base)
         try:
             processor = StructuredProcessor(client, session_dir / 'structured') if structured else None
@@ -682,7 +688,8 @@ def _run_session(prompt=None, *, resume=None, read_only=False, allow_network=Non
                 runtime.begin_turn()
                 rc, new_thread = _run_engine(engine, task, thread_id, session_dir=session_dir, overrides=overrides,
                     runtime=runtime, json_mode=json_mode, verbose=verbose,
-                    turn_timeout=turn_timeout)
+                    turn_timeout=turn_timeout, images=image_snapshots)
+                image_snapshots = []
                 if new_thread:
                     thread_id = new_thread
                     metadata['thread_id'] = thread_id
@@ -831,6 +838,8 @@ def _parser():
         network.add_argument('--allow-network', action='store_true', default=argparse.SUPPRESS)
         network.add_argument('--no-network', action='store_false', dest='allow_network', default=argparse.SUPPRESS)
         sub.add_argument('--json', action='store_true', help='Output agent events as JSONL, diagnostics on stderr')
+        sub.add_argument('--image', action='append', default=[], metavar='PATH',
+                         help='Initial workspace PNG/JPEG/WebP image (structured mode only; repeat up to four times)')
     for command in ('ask', 'job'):
         sub = subs.add_parser(command, help='Direct JV API request; does not execute coding tools')
         if command == 'ask':
@@ -884,7 +893,8 @@ def main(argv=None):
         if prompt is None and not sys.stdin.isatty():
             raise JvError('Interactive mode requires a terminal; use jvcli exec "your task" for automation')
         return _run_session(prompt, resume=getattr(args, 'session_id', None), read_only=args.read_only,
-                            allow_network=args.allow_network, json_mode=getattr(args, 'json', False), verbose=args.verbose)
+                            allow_network=args.allow_network, json_mode=getattr(args, 'json', False), verbose=args.verbose,
+                            images=getattr(args, 'image', ()))
     except KeyboardInterrupt:
         say('Interrupted. A submitted remote job may continue.')
         return 130

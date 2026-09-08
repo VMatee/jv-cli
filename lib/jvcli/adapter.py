@@ -291,7 +291,8 @@ class ResponsesAdapterHandler(BaseHTTPRequestHandler):
                 self._json_response(415, {'error': {'message': 'Send uncompressed JSON with Content-Length'}})
                 return
             lengths = self.headers.get_all('Content-Length', [])
-            if len(lengths) != 1 or not lengths[0].isdigit() or not 0 < int(lengths[0]) <= MAX_JSON_BYTES:
+            limit = 17 * 1024 * 1024 if self.server.runtime.processor else MAX_JSON_BYTES
+            if len(lengths) != 1 or not lengths[0].isdigit() or not 0 < int(lengths[0]) <= limit:
                 self._json_response(400, {'error': {'message': 'Invalid request size'}})
                 return
             if self.headers.get_content_type() != 'application/json':

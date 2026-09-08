@@ -22,7 +22,7 @@ The adapter binds only to 127.0.0.1 on an ephemeral port, requires a cryptograph
 
 ## Model actions and data handling
 
-Legacy coding mode remains the default and retains the strict text-envelope behavior described below. Opt-in structured mode (`JVCLI_AGENT_API=1`) does not use that envelope or its repair prompts. It sends native text messages plus the certified `shell_command` function schema to JV's asynchronous Responses API and accepts exactly one completed assistant message or function call.
+Legacy coding mode remains the default and retains the strict text-envelope behavior described below. Opt-in structured mode (`JVCLI_AGENT_API=1`) does not use that envelope or its repair prompts. It sends native text/initial-image messages plus the certified `shell_command` and `update_plan` function schemas to JV's asynchronous Responses API and accepts exactly one completed assistant message or function call.
 
 Before a structured POST, JV CLI atomically records a unique idempotency key and normalized request body. An ambiguous POST is reconciled only by replaying that same body with that same key. Polling is repeatable; local timeouts do not cancel server work. Response IDs, output IDs, call IDs, lifecycle state, declared tool name, JSON arguments and continuation history are validated before any executable event is published.
 
@@ -57,3 +57,11 @@ Runtime installation is staged and version checked before replacement. Upgrades 
 ## Current limitations
 
 This release has no penetration-test certification, verified production deployment, comprehensive same-user process isolation, persistent-service supervisor, or automatic update/security patch service. Read the acceptance report before rollout. Never respond to a sandbox failure by enabling a dangerous bypass flag.
+
+## Initial image boundary
+
+The `--image` option reads only regular files beneath the selected workspace, rejecting parent traversal and symlinks through directory-descriptor traversal. Codex receives private snapshots. The bridge accepts bounded inline PNG/JPEG/WebP data only, never filesystem paths or remote URLs. Full image decoding and attachment lifecycle remain server responsibilities. Base64 data URLs are redacted from diagnostics; private session journals and snapshots contain image bytes and must not be published. This ingress rule does not claim that all arbitrary engine reads outside the workspace are blocked.
+
+## Certified image and custom tool results
+
+Image results remain function_call_output arrays with their exact call association, never user-message substitutes. Only 1–4 inline PNG/JPEG/WebP image items are accepted. Custom apply_patch grammar is digest-pinned, freeform input is never rewritten or executed by the bridge, and its string result is limited to 32 KiB. Durable state validates call class as well as call ID and exact payload. Server attachment lifecycle and decode remain server-owned.

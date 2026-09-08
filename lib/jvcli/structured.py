@@ -11,6 +11,7 @@ from typing import Any
 
 from .safety import (JvError, ProtocolError, SubmissionUncertain, atomic_write,
                      private_dir, read_private_json, strict_json)
+from .images import validate_image_history, validate_image_request, validate_image_results
 
 STRUCTURED_AGENT_INSTRUCTIONS = '''You are JV CLI, a software-engineering agent in the user's selected workspace.
 The declared function tools execute only on the user's client under its local sandbox and approval policy. JV Server never executes client tools.
@@ -21,13 +22,19 @@ Network permission does not grant root access or permission for system-wide chan
 Check prerequisites with bounded commands. Do not search unrelated projects or the whole filesystem for private toolchains.
 Shell environment changes do not persist between calls. Use the supplied workspace and temporary paths.
 For local web checks prefer framework test clients. If a server is necessary, bind to an ephemeral loopback port and guarantee shutdown.
-Return either one normal assistant message or one structured function call. Never encode tool calls in prose or fenced JSON.
+Return either one normal assistant message, one declared function call, or the declared custom apply_patch call. Never encode tool calls in prose or fenced JSON. Preserve freeform patch input exactly.
 Keep final answers concise and distinguish verified results from limitations.
 '''
 
 MAX_ROUNDS = 500
-MAX_STATE_BYTES = 900 * 1024
+MAX_STATE_BYTES = 64 * 1024 * 1024
 MAX_TOOL_OUTPUT_BYTES = 80 * 1024
+MAX_CUSTOM_BYTES = 32 * 1024
+PATCH_GRAMMAR_SHA256 = 'd6367f4826ed608c424b0a308f3d6163527df63c22513d089b91863552f8bfeb'
+PATCH_DESCRIPTION = ('The `apply_patch` tool can be used to edit files. This is a FREEFORM tool, '
+                     'so do not wrap the patch in JSON.')
+CALL_TYPES = ('function_call', 'custom_tool_call')
+RESULT_TYPES = ('function_call_output', 'custom_tool_call_output')
 _LOCAL_FIELDS = frozenset({
     'model', 'instructions', 'input', 'tools', 'tool_choice',
     'parallel_tool_calls', 'reasoning', 'store', 'stream', 'include',
@@ -66,6 +73,24 @@ def _content_text(content: Any) -> str:
             raise ProtocolError('Structured mode does not support non-text message content')
         parts.append(part['text'])
     return '\n'.join(parts)
+
+
+def _message_content(content: Any, role: str):
+    if isinstance(content, list) and any(
+            isinstance(part, dict) and part.get('type') == 'input_image' for part in content):
+        parts = []
+        for part in content:
+            if not isinstance(part, dict):
+                raise ProtocolError('Invalid structured message content')
+            if part.get('type') == 'input_image':
+                parts.append(dict(part))
+            elif part.get('type') in ('text', 'input_text') and isinstance(part.get('text'), str):
+                parts.append({'type': 'input_text', 'text': part['text']})
+            else:
+                raise ProtocolError('Unsupported mixed image content')
+        validate_image_request({'input': [{'role': role, 'content': parts}]})
+        return parts
+    return _content_text(content)
 
 
 def _validate_arguments(value: Any, schema: dict, depth: int = 0) -> None:
@@ -109,7 +134,7 @@ class DurableResponseState:
     def __init__(self, directory: Path):
         self.directory = private_dir(directory)
         self.path = self.directory / 'state.json'
-        value = read_private_json(self.path)
+        value = read_private_json(self.path, max_bytes=MAX_STATE_BYTES)
         if not value:
             value = {'version': 1, 'rounds': []}
         if value.get('version') != 1 or not isinstance(value.get('rounds'), list):
@@ -217,6 +242,49 @@ class StructuredProcessor:
         for tool in offered:
             if not isinstance(tool, dict):
                 raise ProtocolError('Invalid local structured tool definition')
+            if tool.get('name') == 'apply_patch':
+                grammar = tool.get('format')
+                if (tool.get('type') != 'custom' or 'apply_patch' in schemas
+                        or set(tool) - {'type', 'name', 'description', 'format'}
+                        or tool.get('description') != PATCH_DESCRIPTION
+                        or not isinstance(grammar, dict)
+                        or set(grammar) != {'type', 'syntax', 'definition'}
+                        or grammar.get('type') != 'grammar' or grammar.get('syntax') != 'lark'
+                        or not isinstance(grammar.get('definition'), str)
+                        or hashlib.sha256(grammar['definition'].encode()).hexdigest() != PATCH_GRAMMAR_SHA256):
+                    raise ProtocolError('apply_patch must use the exact certified Codex 0.149.1 custom declaration and grammar')
+                result.append(json.loads(_canonical(tool)))
+                schemas['apply_patch'] = {'type': 'custom'}
+                continue
+            if tool.get('type') == 'function' and tool.get('name') == 'view_image':
+                if 'view_image' in schemas:
+                    raise ProtocolError('Duplicate view_image definition')
+                parameters = tool.get('parameters')
+                if (not isinstance(parameters, dict) or parameters.get('type') != 'object'
+                        or parameters.get('properties', {}).get('path', {}).get('type') != 'string'
+                        or parameters.get('required') != ['path']
+                        or set(parameters.get('properties', {})) != {'path'}):
+                    raise ProtocolError('Unexpected pinned view_image schema')
+                entry = json.loads(_canonical(tool))
+                entry['strict'] = True
+                result.append(entry)
+                schemas['view_image'] = entry['parameters']
+                continue
+            if tool.get('type') == 'function' and tool.get('name') == 'update_plan':
+                if 'update_plan' in schemas:
+                    raise ProtocolError('Duplicate update_plan definition')
+                parameters = tool.get('parameters')
+                if not isinstance(parameters, dict) or parameters.get('type') != 'object':
+                    raise ProtocolError('Invalid update_plan schema')
+                parameters = json.loads(_canonical(parameters))
+                if set(parameters.get('properties', {})) != {'explanation', 'plan'}:
+                    raise ProtocolError('Unexpected pinned update_plan schema')
+                parameters['properties'].pop('explanation')
+                result.append({'type': 'function', 'name': 'update_plan',
+                               'description': 'Update the local task plan.',
+                               'strict': True, 'parameters': parameters})
+                schemas['update_plan'] = parameters
+                continue
             if tool.get('type', 'function') != 'function' or tool.get('name') != 'shell_command':
                 continue
             if 'shell_command' in schemas:
@@ -227,11 +295,14 @@ class StructuredProcessor:
             command_schema = parameters.get('properties', {}).get('command')
             if not isinstance(command_schema, dict) or command_schema.get('type') != 'string':
                 raise ProtocolError('Invalid shell_command command schema')
-            # Certify only the already-proven command argument. Optional timeout,
-            # workdir and escalation-related fields remain local-engine features,
-            # not part of the remote pilot contract.
-            parameters = {'type': 'object', 'properties': {
-                'command': json.loads(_canonical(command_schema))},
+            properties = {'command': json.loads(_canonical(command_schema))}
+            for field, kind in (('workdir', 'string'), ('login', 'boolean'), ('timeout_ms', 'number')):
+                optional = parameters.get('properties', {}).get(field)
+                if optional is not None:
+                    if not isinstance(optional, dict) or optional.get('type') != kind:
+                        raise ProtocolError('Unexpected pinned shell_command schema')
+            # Keep escalation controls out of the remote tool declaration.
+            parameters = {'type': 'object', 'properties': properties,
                 'required': ['command'], 'additionalProperties': False}
             description = tool.get('description', '')
             if not isinstance(description, str):
@@ -264,8 +335,8 @@ class StructuredProcessor:
                 role = item.get('role')
                 if role not in ('system', 'developer', 'user', 'assistant'):
                     raise ProtocolError('Unsupported structured message role')
-                messages.append({'role': role, 'content': _content_text(item.get('content', []))})
-            elif kind in ('function_call', 'function_call_output', 'reasoning'):
+                messages.append({'role': role, 'content': _message_content(item.get('content', []), role)})
+            elif kind in (*CALL_TYPES, *RESULT_TYPES, 'reasoning'):
                 continue
             else:
                 raise ProtocolError(f'Unsupported structured input type: {kind}')
@@ -276,7 +347,7 @@ class StructuredProcessor:
         return messages
 
     @staticmethod
-    def _history(request: dict) -> tuple[dict[str, dict], dict[str, str]]:
+    def _history(request: dict) -> tuple[dict[str, dict], dict[str, Any]]:
         inputs = request.get('input', [])
         if isinstance(inputs, str):
             return {}, {}
@@ -285,29 +356,30 @@ class StructuredProcessor:
             if not isinstance(item, dict):
                 continue
             kind = item.get('type')
-            if kind == 'function_call':
+            if kind in CALL_TYPES:
                 call_id = _require_id(item.get('call_id'), 'local call ID')
                 if call_id in calls:
                     raise ProtocolError('Duplicate function call in local history')
                 calls[call_id] = item
-            elif kind == 'function_call_output':
+            elif kind in RESULT_TYPES:
                 call_id = _require_id(item.get('call_id'), 'local call-output ID')
                 output = item.get('output')
-                if not isinstance(output, str) or len(output.encode('utf-8')) > MAX_TOOL_OUTPUT_BYTES:
-                    raise ProtocolError('Structured function output must be bounded text')
+                if isinstance(output, list) and kind == 'function_call_output':
+                    validate_image_results(output)
+                elif (not isinstance(output, str) or len(output.encode('utf-8')) >
+                      (MAX_CUSTOM_BYTES if kind == 'custom_tool_call_output' else MAX_TOOL_OUTPUT_BYTES)):
+                    raise ProtocolError('Structured tool result has an unsupported type or exceeds its text limit')
                 if call_id in outputs:
                     raise ProtocolError('Duplicate function output in local history')
                 outputs[call_id] = output
-            elif kind in ('custom_tool_call', 'custom_tool_call_output'):
-                raise ProtocolError('Custom tools are not supported by the structured pilot')
         return calls, outputs
 
-    def _verify_history(self, request: dict) -> tuple[int | None, str | None]:
+    def _verify_history(self, request: dict) -> tuple[int | None, Any]:
         calls, outputs = self._history(request)
         known = {}
         for index, item in enumerate(self.state.rounds):
             output = item.get('output')
-            if isinstance(output, dict) and output.get('type') == 'function_call':
+            if isinstance(output, dict) and output.get('type') in CALL_TYPES:
                 known[output['call_id']] = (index, item, output)
         if set(outputs) - set(known) or set(calls) - set(known):
             raise ProtocolError('Codex returned an unexpected structured call ID')
@@ -318,9 +390,17 @@ class StructuredProcessor:
             if local_call is None:
                 raise ProtocolError('Structured function output is missing its published call')
             if (local_call.get('name') != published['name']
-                    or local_call.get('arguments') != published['arguments']
+                    or local_call.get('type') != published['type']
+                    or local_call.get('arguments') != published.get('arguments')
+                    or local_call.get('input') != published.get('input')
                     or local_call.get('id') != published['id']):
                 raise ProtocolError('Codex changed a published structured function call')
+            result_item = next(item for item in request['input']
+                               if item.get('type') in RESULT_TYPES and item.get('call_id') == call_id)
+            if result_item['type'] != published['type'] + '_output':
+                raise ProtocolError('Structured tool result class does not match its published call')
+            if isinstance(output_text, list) and published.get('name') != 'view_image':
+                raise ProtocolError('Image result requires a published view_image call')
             output_digest = _digest(output_text)
             saved = state_item.get('tool_output_digest')
             if saved is not None and saved != output_digest:
@@ -350,12 +430,12 @@ class StructuredProcessor:
 
     @staticmethod
     def _continuation_body(request: dict, tools: list[dict], previous_id: str,
-                           call_id: str, output: str) -> dict:
+                           call_id: str, output: Any, result_type='function_call_output') -> dict:
         return {
             'model': 'jv-ai', 'background': True,
             'previous_response_id': previous_id,
             'instructions': request.get('instructions') or STRUCTURED_AGENT_INSTRUCTIONS,
-            'input': [{'type': 'function_call_output', 'call_id': call_id, 'output': output}],
+            'input': [{'type': result_type, 'call_id': call_id, 'output': output}],
             'tools': tools,
             'tool_choice': request.get('tool_choice', 'auto') if tools else 'none',
             'parallel_tool_calls': False, 'store': True, 'stream': False,
@@ -397,8 +477,19 @@ class StructuredProcessor:
         if not isinstance(item, dict):
             raise ProtocolError('JV structured output item must be an object')
         item_id = _require_id(item.get('id'), 'output item ID')
-        if item.get('status') != 'completed':
+        if item.get('status', 'completed' if item.get('type') == 'custom_tool_call' else None) != 'completed':
             raise ProtocolError('JV structured output item is not completed')
+        if item.get('type') == 'custom_tool_call':
+            if (choice == 'none' or item.get('name') != 'apply_patch'
+                    or schemas.get('apply_patch') != {'type': 'custom'}
+                    or set(item) - {'type', 'id', 'call_id', 'name', 'input', 'status'}):
+                raise ProtocolError('JV requested an undeclared or invalid custom tool')
+            call_id = _require_id(item.get('call_id'), 'call ID')
+            patch = item.get('input')
+            if not isinstance(patch, str) or not patch.strip() or len(patch.encode()) > MAX_CUSTOM_BYTES:
+                raise ProtocolError('Custom apply_patch input must be nonempty UTF-8 of at most 32 KiB')
+            return {'type': 'custom_tool_call', 'id': item_id, 'call_id': call_id,
+                    'name': 'apply_patch', 'input': patch}
         if item.get('type') == 'message':
             if choice == 'required':
                 raise ProtocolError('JV structured response returned text when a tool was required')
@@ -416,7 +507,8 @@ class StructuredProcessor:
                         'annotations': content[0].get('annotations', [])}]}
         if item.get('type') == 'function_call':
             name = item.get('name')
-            if not isinstance(name, str) or name not in schemas:
+            if (choice == 'none' or not isinstance(name, str) or name not in schemas
+                    or schemas[name].get('type') == 'custom'):
                 raise ProtocolError('JV requested an undeclared structured tool')
             call_id = _require_id(item.get('call_id'), 'call ID')
             arguments = item.get('arguments')
@@ -446,12 +538,13 @@ class StructuredProcessor:
         if parent is None or not parent.get('response_id'):
             raise ProtocolError('Structured continuation lost its prior response')
         return self._continuation_body(request, tools, parent['response_id'],
-                                       parent_call_id, outputs[parent_call_id])
+                                       parent_call_id, outputs[parent_call_id], parent['output']['type'] + '_output')
 
     def infer(self, request: dict, runtime) -> list[dict]:
         if self.state.write_failed:
             raise JvError('Structured state persistence failed; restart requires reconciliation')
         self._validate_local_request(request)
+        validate_image_history(request.get('input', []))
         tools, schemas = self._tools(request)
         local_digest = _digest({key: request.get(key) for key in
                                 ('instructions', 'input', 'tools', 'tool_choice')})
@@ -472,13 +565,19 @@ class StructuredProcessor:
                 raise JvError(round_item.get('error', 'The structured round previously failed'))
         else:
             parent, tool_output = self._verify_history(request)
+            # Validate the complete supplied history even for reduced continuations.
+            # Unsupported content must not disappear merely because a call is pending.
+            validate_image_request({'input': self._messages(request)})
             if parent is None:
                 body = self._base_body(request, tools)
+                validate_image_request(body)
                 index = self.state.prepare(local_digest, body)
             else:
                 prior = self.state.rounds[parent]
                 body = self._continuation_body(
-                    request, tools, prior['response_id'], prior['output']['call_id'], tool_output)
+                    request, tools, prior['response_id'], prior['output']['call_id'], tool_output,
+                    prior['output']['type'] + '_output')
+                validate_image_request(body)
                 index = self.state.prepare(local_digest, body, parent, _digest(tool_output))
             round_item = self.state.rounds[index]
         if runtime.cancel.is_set():
@@ -540,14 +639,14 @@ class StructuredProcessor:
                     continue
                 if prior_output.get('id') == output.get('id'):
                     raise ProtocolError('JV replayed an output item ID')
-                if (output['type'] == 'function_call'
+                if (output['type'] in CALL_TYPES
                         and prior_output.get('call_id') == output.get('call_id')):
                     raise ProtocolError('JV replayed a structured call ID')
             runtime.validate_action_items([output])
         except JvError as exc:
             self.state.update(index, phase='rejected', remote_status='completed', error=str(exc))
             raise
-        phase = 'published' if output['type'] == 'function_call' else 'final'
+        phase = 'published' if output['type'] in CALL_TYPES else 'final'
         self.state.update(index, phase=phase, remote_status='completed', output=output)
         runtime.status = 'structured model response received'
         return [output]

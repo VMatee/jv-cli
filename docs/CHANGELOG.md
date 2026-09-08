@@ -86,3 +86,16 @@ This is the first public GitHub release baseline.
 Existing settings and old logs are preserved, but 0.2.x engine histories are not automatically migrated into new JV session metadata. Start a fresh session after updating.
 
 This is still a Python wrapper plus a separately installed stock Rust engine. No JV Rust SDK or entire Codex source fork is bundled. Engine 0.149.1 compatibility and the scripted sandbox checks passed on the release host; actual model quality, all kernels, and ARM64 are not certified. Read TEST_REPORT.md.
+
+## Unreleased structured integration (VERSION remains 0.4.0)
+
+- Add workspace-only initial `--image` input, ordered PNG/JPEG/WebP bridge content, bounded private durable replay, and image diagnostic redaction.
+- Forward `update_plan` and safe optional shell fields; retain opt-in structured mode and legacy behavior.
+- Add exact 0.149.1 tool capture and web/image/resume engine checks.
+- At that checkpoint, core acceptance was blocked by unpublished `view_image` result-array and `apply_patch` custom-tool contracts. Contract `52be898` resolved those client wire blockers; current production limitations are recorded in [CODEX_PARITY.md](CODEX_PARITY.md).
+
+## Continued core integration against public contract 52be898
+
+- Enable real image-bearing view_image continuations and exact custom/freeform apply_patch transport with the pinned grammar digest.
+- Preserve durable custom/image result identity, per-round replay and local-only execution; reject wrong classes, changed freeform text and unsupported arrays.
+- Add bridge HTTP and real-engine patch/image/browser geometry regressions, plus a bounded hidden-login production runner. VERSION remains 0.4.0.

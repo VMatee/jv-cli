@@ -69,8 +69,9 @@ class StructuredScriptedClient:
             if any(body.get(name) != value for name, value in required.items()):
                 raise JvError('Structured engine check lost a mandatory remote field')
             if [(item.get('type'), item.get('name')) for item in body.get('tools', [])] != [
-                    ('function', 'shell_command')]:
-                raise JvError('Structured engine check did not isolate the certified shell tool')
+                    ('function', 'shell_command'), ('function', 'update_plan'),
+                    ('custom', 'apply_patch'), ('function', 'view_image')]:
+                raise JvError('Structured engine check did not isolate the certified tools')
             if 'RESPONSE CONTRACT' in body.get('instructions', ''):
                 raise JvError('Structured mode used the legacy text-agent instructions')
             return {'id': 'response_engine_1', 'object': 'response', 'status': 'completed',

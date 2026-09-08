@@ -85,7 +85,7 @@ def atomic_write(path: Path, text: str, mode: int = 0o600) -> None:
         Path(tmp).unlink(missing_ok=True)
 
 
-def read_private_json(path: Path) -> dict:
+def read_private_json(path: Path, *, max_bytes: int = 1024 * 1024) -> dict:
     path = no_symlink_path(path)
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
@@ -93,10 +93,10 @@ def read_private_json(path: Path) -> dict:
         return {}
     with os.fdopen(fd, "rb") as handle:
         meta = os.fstat(handle.fileno())
-        if not stat.S_ISREG(meta.st_mode) or meta.st_size > 1024 * 1024:
+        if not stat.S_ISREG(meta.st_mode) or meta.st_size > max_bytes:
             raise JvError(f"Invalid state file: {path}")
         try:
-            value = strict_json(handle.read(1024 * 1024 + 1))
+            value = strict_json(handle.read(max_bytes + 1))
         except (ValueError, UnicodeError, RecursionError):
             raise JvError(f"Invalid JSON in {path}; preserve it for recovery rather than overwriting it") from None
     if not isinstance(value, dict):
@@ -114,6 +114,7 @@ def terminal_text(value: Any) -> str:
 
 
 def redact(text: str, secrets: tuple[str, ...] = ()) -> str:
+    text = re.sub(r'data:[^\s,;]+;base64,[A-Za-z0-9+/=]+', '[REDACTED IMAGE DATA]', text)
     for secret in secrets:
         if secret:
             text = text.replace(secret, "[REDACTED]")

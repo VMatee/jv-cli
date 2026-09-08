@@ -5,7 +5,7 @@ This guide applies to contributors working on this repository. It is not the run
 ## Current baseline
 
 - Product: JV CLI. User command: `jvcli`.
-- Read `VERSION` for the current source version; the documented baseline is 0.3.3.
+- Read `VERSION` for the current source version; the documented baseline is 0.4.0.
 - Keep the known-good engine pinned to `@openai/codex@0.149.1`. Do not upgrade it as part of unrelated work.
 - Plain `jvcli`, `exec` and `resume` use workspace-write mode with tool networking enabled.
 - `--no-network` disables tool networking. `--read-only` denies writes and tool networking. Explicit `--read-only --allow-network` is rejected.
@@ -13,6 +13,7 @@ This guide applies to contributors working on this repository. It is not the run
 - There is no YOLO flag, automatic privilege elevation or passwordless-sudo setup. Do not change sudoers, global services or another application's configuration as a routine implementation step.
 - `--verbose` exposes detailed commands and bounded output. `exec --json` remains JSONL on stdout with diagnostics on stderr.
 - A source version on `main` does not mean a tagged GitHub Release exists. Do not create a tag or Release without an explicit request.
+- Structured mode is opt-in through `JVCLI_AGENT_API=1` and supports text, initial PNG/JPEG/WebP images and client-executed `shell_command`, `update_plan`, `view_image` and custom `apply_patch`; see `docs/CODEX_PARITY.md` for certification scope. Legacy `/v1/jobs` remains the default.
 
 ## Inspect before changing
 
@@ -49,6 +50,10 @@ Do not weaken sandboxing or enable root execution to make a test pass. Do not ki
 
 ## Protocol and output invariants
 
+- The public structured contract at `52be8980e01828959df7712ddae17d077d69efcf` certifies initial images, image-only function result arrays and exact pinned custom `apply_patch` declarations/calls/string results. Preserve their call class, identity, image bytes, freeform text and durable continuation semantics; reject other unsupported shapes.
+- Do not infer structured attachment behavior from legacy `/v1/jobs` or from Codex request shapes. Direct `jvcli ask --file` attachments remain a separate legacy capability. When the server contract is updated, inspect the current protocol-reference repository and capture the pinned Codex engine's actual request before designing the client translation.
+- A future structured attachment implementation must validate the complete request and server response, use strict MIME/type and size limits, keep temporary data private, preserve durable idempotency and restart safety, avoid duplicate uploads or inference rounds after ambiguous outcomes, and fail closed on unsupported or changed attachment state. Never expose local files merely because they appear in model-generated arguments.
+- Preserve the client/server execution boundary: image inspection may inform inference, but JV Server must not execute client tools or gain unrestricted workspace access. Keep legacy jobs, generated-file downloads, sandboxing, network policy and credential isolation intact.
 - Accept only validated whole response envelopes, including matching JSON fences and the supported standalone JSON badge. Preserve code and patch contents; do not guess truncated commands.
 - Validate an entire tool batch before emitting any tool from it. Unknown tools and invalid arguments must fail closed.
 - Retry only confirmed completed jobs with rejected model output, within the existing two-correction budget. Do not blindly resubmit uncertain network submissions.

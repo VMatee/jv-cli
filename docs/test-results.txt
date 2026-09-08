@@ -1,3 +1,20 @@
+JV CLI 0.4.0 current Codex parity integration (2026-09-08)
+267 tests run: 266 passed, 1 skipped (Python 3.10 tomllib), 0 failed
+Focused structured suite: 38 passed
+Existing real pinned-engine suite: 14/14 passed
+Additional real pinned-engine parity suite: 8/8 passed
+Initial images, update_plan, serial coding and resume: offline PASS
+view_image structured results and custom apply_patch: offline real-engine PASS
+Live custom apply_patch + shell: PASS, 3 rounds, zero repairs
+Live images: BLOCKED by account provider assignment; no image inference completed
+Live view_image/web UI: NOT RUN after deterministic attachment-assignment rejection
+Package: 66 manifest files; 67 ZIP entries; reproducible and isolated checks PASS
+VERSION unchanged: 0.4.0; engine unchanged: 0.149.1
+Release-candidate readiness: NO
+See docs/CODEX_PARITY.md and docs/TEST_REPORT.md.
+
+Historical acceptance record follows (does not certify the current integration):
+
 JV CLI 0.4.0 structured release-candidate validation (2026-09-08)
 
 247 tests run: 246 passed, 1 skipped, 0 failed

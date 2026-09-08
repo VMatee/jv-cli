@@ -45,8 +45,8 @@ def local_request():
                  'type': 'object', 'properties': {
                      'command': {'type': 'string'}, 'workdir': {'type': 'string'}},
                  'required': ['command'], 'additionalProperties': False}},
-            {'type': 'custom', 'name': 'apply_patch'},
-            {'type': 'function', 'name': 'view_image', 'parameters': {'type': 'object'}},
+            {'type': 'custom', 'name': 'uncertified_custom'},
+            {'type': 'function', 'name': 'uncertified_image', 'parameters': {'type': 'object'}},
         ],
         'tool_choice': 'auto', 'parallel_tool_calls': True,
         'reasoning': {'summary': 'auto'}, 'store': False, 'stream': True,
@@ -295,7 +295,7 @@ class StructuredProcessorTests(unittest.TestCase):
             required['tools'] = [{'type': 'custom', 'name': 'apply_patch'}]
             required['tool_choice'] = 'required'
             runtime, _, _ = self.make_runtime(td, [])
-            with self.assertRaisesRegex(ProtocolError, 'no certified'):
+            with self.assertRaisesRegex(ProtocolError, 'certified'):
                 runtime.process_request(required)
 
 
@@ -364,6 +364,13 @@ class StructuredTransportTests(unittest.TestCase):
         self.server.create_status = 200
         self.assertEqual(self.client.create_response(
             {'model': 'jv-ai'}, 'replay_1')['id'], 'response_1')
+
+    def test_create_reports_bounded_public_validation_error(self):
+        self.server.create_status = 400
+        self.server.create_payload = {'error': {'code': 'invalid_request',
+                                                'message': 'Tool schema was rejected.'}}
+        with self.assertRaisesRegex(JvError, 'invalid_request: Tool schema was rejected'):
+            self.client.create_response({'model': 'jv-ai'}, 'bad_1')
 
     def test_poll_queued_in_progress_completed(self):
         self.server.polls = [response('queued'), response('in_progress'),

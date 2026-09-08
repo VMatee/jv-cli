@@ -50,7 +50,7 @@ Direct `jvcli ask --conversation-id` supports the legacy JV API's native continu
 
 The legacy adapter supports text messages, function calls, custom/freeform tool calls, their outputs, whole-history input, Responses JSON/SSE output, and `auto`/`none`/`required` tool choice. It is not a complete Responses implementation.
 
-Legacy mode rejects `previous_response_id`, background requests, image/audio input, and hosted tool types it cannot implement. Structured mode uses `previous_response_id` only for a validated tool continuation and currently certifies only `shell_command`. It filters other offered local tools from the remote declaration and rejects unsupported content/call output. Neither mode provides WebSockets or a compaction endpoint.
+Legacy mode rejects `previous_response_id`, background requests, image/audio input, and hosted tool types it cannot implement. Structured mode uses `previous_response_id` only for a validated tool continuation and supports initial user images plus `shell_command`, `update_plan`, `view_image` and custom `apply_patch`. It filters other offered local tools from the remote declaration and rejects unsupported content/call output. Neither mode provides WebSockets or a compaction endpoint.
 
 Upstream JV jobs are polled; keepalive comments maintain the local stream while waiting. This is **not real model token streaming**. The adapter does not invent token usage/billing counts. It requests no artificial chain-of-thought disclosure.
 
@@ -71,3 +71,5 @@ Legacy custom multiline patches can use `input_lines`; literal newlines/tabs ins
 The normal application root is `~/.local/share/jv-cli`; portable mode uses the extracted repository. Account origin/username live in `.state/config.json` under that root. Each new session has `.state/runs/ID/` containing session metadata, engine home/history, neutral prompt, model catalog, tool home and temp files. Structured sessions additionally have `structured/state.json`, a private atomic journal of normalized bodies, idempotency keys, response IDs and tool-publication/continuation state. It is bound to one username/origin/workspace and transport mode. Random adapter keys remain memory-only and new ports/config are generated on resume.
 
 The wrapper uses engine JSONL events, not the upstream full-screen TUI. Successful child exit alone is insufficient: a completed turn and nonempty assistant message are required. `turn.failed`, adapter failures and missing completion return failure.
+
+Initial images preserve ordered user content and actual data URLs. Workspace paths are securely snapshotted before engine launch; the bridge never reads paths from image content. The accepted contract defines image-only function result arrays and the exact pinned custom/freeform apply_patch declaration/call/string-result path. See [CODEX_PARITY.md](CODEX_PARITY.md) for the exact pinned wire shapes and current certification status.

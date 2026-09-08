@@ -8,6 +8,8 @@ Current source version: **0.4.0** (canonical value: [VERSION](VERSION)). The eng
 
 The current source also contains an opt-in pilot for JV's structured Responses API. Legacy `/v1/jobs` coding remains the default during the controlled rollout. Workspace protections remain enabled; there is no YOLO mode, automatic sudo elevation, or passwordless-sudo setup. A source version on `main` is not a published GitHub Release.
 
+Structured mode now supports initial workspace PNG/JPEG/WebP images via `exec/resume --image PATH`, plus local `shell_command`, `update_plan`, `view_image` image results and exact custom/freeform `apply_patch`. These follow accepted contract `52be898`; current production certification is recorded in the audit. See [the pinned-engine compatibility audit](docs/CODEX_PARITY.md). Legacy direct attachments remain available through `jvcli ask --file screenshot.png "Analyze this screenshot"`.
+
 See [the changelog](docs/CHANGELOG.md) for version history and [the test report](docs/TEST_REPORT.md) for validation and limitations.
 
 ## What is JV CLI?
@@ -198,6 +200,8 @@ JVCLI_AGENT_API=1 jvcli exec "inspect this project"
 
 This uses asynchronous `POST /v1/responses` plus polling and durable per-round idempotency state. Use the same setting when resuming a structured session. Omitting the variable keeps the existing `/v1/jobs` coding path.
 
+For an initial image, use `JVCLI_AGENT_API=1 jvcli exec --image screenshot.png "Explain the screenshot"`. Repeat `--image` up to four times; paths must be inside the selected workspace and must not traverse symlinks. The bridge preserves actual image bytes and content order. Structured attachments require a compatible server account assignment; the public contract currently excludes Gemini attachments. Generic staged files are a JV extension and are not exposed through a new coding option here. HTML/CSS/JS and other source files need no attachment support: Codex reads and edits them through local tools.
+
 Longer waiting does not resolve server-side `waiting_for_auth` or malformed model responses. See [configuration](docs/CONFIGURATION.md) for timeout variables, precedence and limits.
 
 ## Updating
@@ -294,7 +298,7 @@ python3 -B scripts/engine_smoke.py
 
 The unit suite uses temporary homes and mock services. The engine smoke test uses the real pinned local engine with a scripted loopback model and does not contact the live JV API. `scripts/live_smoke.py` is optional, requires an account, asks for confirmation, and may consume quota.
 
-The recorded 0.4.0 validation on Python 3.10 ran **247 automated tests: 246 passed, one skipped, zero failed**, plus **14 passing real-engine checks**. The skip needs Python 3.11's `tomllib`. Checks include the opt-in structured two-round shell continuation, legacy shell/patch execution, resume, protocol recovery, terminal output, networking enabled/disabled and denied writes outside the workspace. These are scoped tests, not a guarantee about every live model or operating system.
+The current integration totals are recorded in [the test report](docs/TEST_REPORT.md). The real-engine suites cover structured shell, view_image, custom apply_patch, resume, local web build/browser checks, legacy behavior, sandbox denial and network policy. Production custom apply_patch plus shell passed; production images remain unaccepted because the tested account's provider assignment rejects structured attachments. These are scoped checks, not a guarantee about every model or operating system.
 
 To additionally check generated Flask files and HTML/CSS responses after a malformed reply, pass `--flask-python /absolute/path/to/venv/bin/python` to `engine_smoke.py`, using a disposable virtual environment that already contains Flask. The check uses Flask's test client, installs no packages itself, and leaves no server running. It tests adapter/tool integration, not the live model's coding ability.
 
@@ -317,7 +321,7 @@ jvcli CLI
     -> sandboxed local tools in the selected workspace
 ```
 
-The Python modules separate CLI/session management, legacy text-envelope conversion, native structured translation/state, transport, adapter handling, and filesystem safety. Structured certification currently covers `shell_command`; legacy mode retains its existing function/custom-tool support. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The Python modules separate CLI/session management, legacy text-envelope conversion, native structured translation/state, transport, adapter handling, and filesystem safety. Offline structured certification covers initial images, `shell_command`, `update_plan`, `view_image`, custom `apply_patch`, serial continuation and resume; live image acceptance remains pending for a compatible provider assignment. Legacy mode retains its existing function/custom-tool support. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Upstream Attribution
 
