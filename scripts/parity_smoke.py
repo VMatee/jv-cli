@@ -184,6 +184,26 @@ def main():
         assert base64.b64decode(results[-1]['output'][0]['image_url'].split(',')[1]) == tiny_png()
         assert view_client.posts[1][0]['input'][0]['output'] == results[-1]['output']
         checks['view_image_structured_continuation'] = True
+        # More observations than Central's active window, plus an actual reopen.
+        page_paths = []
+        for index in range(6):
+            path = workspace / f'page-{index}.png'
+            path.write_bytes(tiny_png())
+            page_paths.append(path)
+        observations = page_paths + [page_paths[0]]
+        history_session = private_dir(folder / 'visual-history-session')
+        history_client = Script([('view_image', {'path': str(path)}, None)
+                                 for path in observations] + [(None, None, None)])
+        history_capture = Capture(StructuredProcessor(history_client, history_session / 'structured'))
+        run(engine, history_session, history_capture, history_client)
+        history_results = [item for item in history_capture.requests[-1]['input']
+                           if item.get('type') == 'function_call_output']
+        assert len(history_results) == 7
+        assert len({item['call_id'] for item in history_results}) == 7
+        assert len(history_client.posts) == 8
+        assert all(base64.b64decode(item['output'][0]['image_url'].split(',')[1])
+                   == tiny_png() for item in history_results)
+        checks['six_view_images_and_reopen_with_distinct_calls'] = True
         patch_session = private_dir(folder / 'patch-session')
         patch = '*** Begin Patch\n*** Add File: patched.txt\n+exact local patch\n*** End Patch\n'
         patch_client = Script([('apply_patch', patch, None), ('shell_command', {'command': 'cat patched.txt'}, 'Success'),

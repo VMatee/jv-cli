@@ -64,12 +64,16 @@ def validate_image_results(output) -> None:
 
 
 def validate_image_history(inputs) -> None:
-    """Apply the server's image count/byte limits across replayed local history."""
+    """Validate every replayed image; only Central selects active visual context.
+
+    Local HTTP size, durable state and task-round budgets bound replay resources.
+    Historical results are still checked individually and matched to their saved
+    digests by StructuredProcessor; replay does not constitute a new observation.
+    """
     if isinstance(inputs, str):
         return
     if not isinstance(inputs, list):
         raise ProtocolError('Structured input must be text or an item list')
-    count, total = 0, 0
     for item in inputs:
         if not isinstance(item, dict):
             raise ProtocolError('Structured input items must be objects')
@@ -82,10 +86,7 @@ def validate_image_history(inputs) -> None:
             groups.append(item['output'])
         for group in groups:
             for part in group:
-                total += validate_image(part)
-                count += 1
-    if count > 4 or total > MAX_IMAGE_TOTAL:
-        raise ProtocolError('Structured image history exceeds 4 images or 12 MiB decoded total')
+                validate_image(part)
 
 
 def validate_image_request(body: dict) -> None:

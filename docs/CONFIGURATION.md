@@ -1,5 +1,10 @@
 # Configuration
 
+## Structured task completion (0.4.3)
+
+`JVCLI_AGENT_API=1` enables the structured agent protocol. `JVCLI_MAX_REQUESTS` (40 default, 1–500) is frozen per task and includes metadata and semantic-review inferences. At most three completion reviews, 64 metadata commits and 16 KiB of model evidence are permitted per task. There is no runtime bypass for the completion gate. See [AGENT_COMPLETION.md](AGENT_COMPLETION.md).
+
+
 `jvcli login` saves `.state/config.json` containing only:
 
 ```json
@@ -60,7 +65,8 @@ HTTPS is required except loopback HTTP. Base origins must not contain embedded c
 - Uploads: at most 10 files, 25 MiB each, 100 MiB combined; regular non-symlink files.
 - Downloads: at most 10 files, 25 MiB each, 100 MiB combined; exact declared size, no overwrite.
 - Model output: at most 8 tool calls in an envelope. A fourth identical action in a turn stops the loop.
-- Invalid completed model responses: at most two correction jobs per response, also counted against `JVCLI_MAX_REQUESTS` and the turn timeout. Progress is shown; session metadata records `model_requests` and `response_repairs`. Additional jobs can consume service quota.
+- Legacy `/v1/jobs` invalid completed model responses: at most two correction jobs per response, also counted against `JVCLI_MAX_REQUESTS` and the turn timeout. Progress is shown; session metadata records `model_requests` and `response_repairs`. Additional jobs can consume service quota.
+- Fresh structured JV-WIRE formatting correction is Server-owned: generation 1 is primary, generations 2-5 are format corrections only, and generation 6 is forbidden. JVCLI does not locally salvage or repair rejected wire text.
 - ID validation: ASCII letters, digits, hyphens and underscores. Other opaque-ID formats are unsupported.
 - Structured mode admits `shell_command` and `update_plan`, plus initial user-message PNG/JPEG/WebP images. The certified custom apply_patch and image-only view_image result arrays are supported. Other custom tools, hosted/MCP tools, audio, remote streaming and parallel calls remain unsupported.
 - Each structured logical round stores its normalized body, idempotency key, response ID and publication state privately under the session directory. State is bounded and atomically replaced.
@@ -76,3 +82,24 @@ The tool HOME/TMPDIR/cache are private local paths. `PIP_REQUIRE_VIRTUALENV=true
 ## Structured initial images
 
 With `JVCLI_AGENT_API=1`, `exec` and `resume` accept repeated `--image PATH` options (up to four PNG/JPEG/WebP images). Paths must be beneath the workspace with no symlinks. Private snapshots and durable image request bodies remain in session state. The structured journal is bounded to 64 MiB; non-image metadata remains bounded to 64 KiB. `auto` and `high` image detail are supported; remote URLs and original detail are rejected. See [the parity audit](CODEX_PARITY.md) for certified wire forms and live acceptance status.
+
+## Bounded visual context (deployed architecture; originated in 0.4.1)
+
+Historical `view_image` results are validated and matched to their durable call
+and result digests on every replay. Their cumulative count is not an active-image
+limit. With the coordinated Server extension, the four most recently observed
+distinct images stay active; older observations remain reference-only metadata.
+Only the current continuation result is sent by JVCLI. Per-request and per-result
+image counts remain four; current decoded images remain bounded to 12 MiB.
+
+Task limits remain `JVCLI_MAX_REQUESTS=40` per turn (configurable 1–500), 500 durable
+rounds per saved session, 64 MiB durable state, 17 MiB local/remote structured HTTP
+requests and 64 KiB normalized remote metadata. A turn defaults to one hour with
+five minutes per job. The Server extension separately freezes
+`COMBINED_AGENT_MAX_ROUNDS=40` (1–500) when a conversation starts. Budgets are not
+reset by image eviction or reinspection. The stricter bound applies.
+
+Pinned Codex still sends full local history; large replayed images can reach the
+unchanged 17 MiB local request ceiling before the round budget. This change bounds
+provider attachments, not arbitrary full-history engine memory. See
+[VISUAL_CONTEXT.md](VISUAL_CONTEXT.md). Public contract `52be898` is not updated.

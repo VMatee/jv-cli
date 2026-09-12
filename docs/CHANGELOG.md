@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.4.3 — completion liveness (canonical release candidate)
+
+- Strict `jv-task-completion-v2` commitments explicitly reconcile every open plan
+  item by current identity. Model-authored completed/superseded/not_required
+  attestations can close stale progress without a separate update_plan call.
+- Plan reconciliation, task commitment and final delivery record persist atomically;
+  crash/replay tests prove no duplicate inference, tools or completion transition.
+- Agent journal v2 fails closed on historical v1 journals; preserve those sessions
+  and start fresh. Stock Codex remains unmodified at 0.149.1; coordinated Server
+  and provider implementation is maintained separately from this repository.
+- Completion reviews stay at three and active visual identities at four. Fresh
+  JV-WIRE logical responses allow at most five model generations for wire-format
+  correction, never generation 6; frozen legacy protocols retain their historical
+  compatibility limits.
+- Scenario 01 received production acceptance on 2026-09-12. GitHub commit, tag and
+  Release publication remain separate release-management gates.
+
+
+## 0.4.2 — isolated agent-completion candidate
+
+Structured mode now journals bounded model-authored visual evidence and withholds tool-driven finals until a bounded completion review commits the task. New user turns preserve canonical Server continuation; old 0.4.1 journals fail closed. Engine 0.149.1, four active visuals and the 17 MiB body ceiling remain fixed. Release packaging excludes development caches and private audit folders. Deployment/live status is recorded separately in the overnight report.
+
+
+## 0.4.1 — offline visual-context candidate, 2026-09-09
+
+- Separate full historical image validation from Central's four-image active working set. Retain per-image checks and durable call/result digests while continuing to send only the new result.
+- Coordinate with the Server WIP's deterministic image working set and reference-only history; no visual summaries or OCR. Require that extension for tasks exceeding the old cumulative contract. This is not yet deployed or published.
+- Fix the adapter completion/lock-release race that could reject an immediate continuation with HTTP 409.
+- Keep bounded request, byte, task, session and timeout limits, local sandbox/network policy and Codex 0.149.1.
+
 ## 0.4.0 — 2026-09-08
 
 - Add an opt-in `JVCLI_AGENT_API=1` transport for the asynchronous structured `POST /v1/responses` and `GET /v1/responses/{id}` pilot while preserving `/v1/jobs` as the default and retaining direct job/download commands.

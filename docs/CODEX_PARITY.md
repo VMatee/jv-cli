@@ -1,3 +1,28 @@
+# 0.4.3 completion-liveness and visual-context verification
+
+Current verification retains the scripted stock-engine, parity, committed-turn and
+six-image completion checks with unmodified Codex 0.149.1. The coordinated
+production stack additionally passed Scenario 01 live acceptance on 2026-09-12.
+See [TEST_REPORT.md](TEST_REPORT.md). Historical sections below retain their
+original scope and deployment statements; they are not rewritten as if they had
+been live-accepted at the time.
+
+# Offline bounded visual context candidate — 2026-09-09
+
+## 0.4.2 candidate scope
+
+The new [agent completion architecture](AGENT_COMPLETION.md) adds a local metadata tool and bounded completion review without modifying stock Codex 0.149.1. `scripts/agent_smoke.py` exercises actual view_image, no-network shell execution, evidence, withheld final, completion and thread resume against scripted inference. Historical sections below describe earlier contract snapshots; the overnight audit is authoritative for this candidate.
+
+
+JVCLI 0.4.1 separates historical replay validation from active visual context.
+The coordinated Server WIP retains four recent distinct images for inference and
+compiles older observations as factual references. Neither production Server nor
+the installed JVCLI has been updated. Public contract revision `52be898` remains
+unchanged; this new extension requires independent audit and explicit deployment.
+See [the architecture note](VISUAL_CONTEXT.md) for budgets, reinspection and limits.
+The historical certification below does not certify live grading or this new
+working-set behavior. No Scenario 01 retry has been run for this work.
+
 # Current Codex core integration — contract 52be898
 
 The accepted public contract is now [52be8980e01828959df7712ddae17d077d69efcf](https://github.com/VMatee/jv-llm-api-example/blob/52be8980e01828959df7712ddae17d077d69efcf/docs/responses-api.md).

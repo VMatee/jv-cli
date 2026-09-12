@@ -192,15 +192,15 @@ class CoreBridgeTests(unittest.TestCase):
                 with self.assertRaises(ProtocolError): runtime.process_request(request)
                 self.assertEqual(len(client.posts), 1)
 
-    def test_combined_initial_and_tool_result_image_limit_fails_before_continuation(self):
+    def test_four_initial_images_and_one_tool_result_continue(self):
         with tempfile.TemporaryDirectory() as td:
-            client = FakeStructuredClient([response(output=[tool('{"path":"x.png"}', name='view_image')])])
+            client = FakeStructuredClient([response(output=[tool('{"path":"x.png"}', name='view_image')]),
+                                           response(output=[message()], response_id='response_2')])
             runtime = AdapterRuntime(client, processor=StructuredProcessor(client, Path(td)))
             request = core_request()
             request['input'][0]['content'] = [image()] * 4
             call = runtime.process_request(request)[0]
             request['input'] += [call, {'type': 'function_call_output',
                 'call_id': call['call_id'], 'output': [image()]}]
-            with self.assertRaisesRegex(ProtocolError, 'history exceeds'):
-                runtime.process_request(request)
-            self.assertEqual(len(client.posts), 1)
+            self.assertEqual(runtime.process_request(request), [message()])
+            self.assertEqual(len(client.posts), 2)

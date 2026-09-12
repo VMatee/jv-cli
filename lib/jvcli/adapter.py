@@ -347,12 +347,20 @@ class ResponsesAdapterHandler(BaseHTTPRequestHandler):
                 if 'error' in result:
                     raise result['error']
                 items = result['items']
+                # The completed response can immediately trigger its continuation.
+                # Finish the worker and open the gate before publishing completion.
+                worker.join()
+                self.runtime.lock.release()
+                locked = False
                 self._finish_sse(response_id, items)
             else:
                 items = self.runtime.process_request(request)
+                self.runtime.lock.release()
+                locked = False
                 self._json_response(200, {'id': response_id, 'object': 'response', 'status': 'completed', 'output': items})
         except (BrokenPipeError, ConnectionResetError, socket.timeout):
-            self.runtime.cancel.set()
+            if locked:
+                self.runtime.cancel.set()
             self.close_connection = True
         except JvError as exc:
             self.runtime.last_error = str(exc)

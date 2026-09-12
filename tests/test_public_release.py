@@ -18,14 +18,28 @@ import manage
 from jvcli import cli
 from jvcli.safety import JvError
 
-spec = importlib.util.spec_from_file_location("jv_build_release", ROOT / "scripts/build_release.py")
+spec = importlib.util.spec_from_file_location(
+    "jv_build_release", ROOT / "scripts/build_release.py"
+)
 build_release = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(build_release)
 
 
 class PublicReleaseTests(unittest.TestCase):
+    def test_development_caches_and_private_audits_are_not_packaged(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "VERSION").write_text("0.4.2\n")
+            for name in (".pytest_cache", ".ruff_cache", ".mypy_cache", ".audit"):
+                (root / name).mkdir()
+                (root / name / "private.json").write_text("synthetic private content")
+            self.assertEqual(manage.public_files(root), [Path("VERSION")])
+
     def install_without_engine(self, home):
-        with patch.object(os, "geteuid", return_value=1000), contextlib.redirect_stdout(io.StringIO()):
+        with (
+            patch.object(os, "geteuid", return_value=1000),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
             manage.install(ROOT, no_engine=True, home=home)
         return home / ".local/share/jv-cli"
 
@@ -37,8 +51,12 @@ class PublicReleaseTests(unittest.TestCase):
             launcher = home / ".local/bin/jvcli"
             self.assertTrue(launcher.is_symlink())
             self.assertEqual(launcher.resolve(), installed / "bin/jvcli")
-            result = subprocess.run([str(launcher), "--version"], env={**os.environ, "HOME": str(home)},
-                                    capture_output=True, text=True)
+            result = subprocess.run(
+                [str(launcher), "--version"],
+                env={**os.environ, "HOME": str(home)},
+                capture_output=True,
+                text=True,
+            )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn((ROOT / "VERSION").read_text().strip(), result.stdout)
 
@@ -49,21 +67,42 @@ class PublicReleaseTests(unittest.TestCase):
             installed = self.install_without_engine(home)
             engine = installed / "runtime/node_modules/.bin/codex"
             engine.parent.mkdir(parents=True)
-            engine.write_text("#!/bin/sh\ncase \"$1\" in --version) echo 'codex-cli 0.149.1';; *) echo --json;; esac\n")
+            engine.write_text(
+                "#!/bin/sh\ncase \"$1\" in --version) echo 'codex-cli 0.149.1';; *) echo --json;; esac\n"
+            )
             engine.chmod(0o755)
-            result = subprocess.run([str(home / ".local/bin/jvcli"), "doctor"],
-                                    env={**os.environ, "HOME": str(home)}, capture_output=True, text=True)
+            result = subprocess.run(
+                [str(home / ".local/bin/jvcli"), "doctor"],
+                env={**os.environ, "HOME": str(home)},
+                capture_output=True,
+                text=True,
+            )
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
 
     def test_portable_install_does_not_create_local_home_paths(self):
         with tempfile.TemporaryDirectory() as td:
             temporary = Path(td)
             source = temporary / "source"
-            shutil.copytree(ROOT, source, ignore=shutil.ignore_patterns(".git", ".state", ".cache", "runtime", ".backups", "dist", "__pycache__"))
+            shutil.copytree(
+                ROOT,
+                source,
+                ignore=shutil.ignore_patterns(
+                    ".git",
+                    ".state",
+                    ".cache",
+                    "runtime",
+                    ".backups",
+                    "dist",
+                    "__pycache__",
+                ),
+            )
             manage.write_manifest(source)
             home = temporary / "home"
             home.mkdir()
-            with patch.object(os, "geteuid", return_value=1000), contextlib.redirect_stdout(io.StringIO()):
+            with (
+                patch.object(os, "geteuid", return_value=1000),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
                 manage.install(source, no_engine=True, portable=True, home=home)
             self.assertFalse((home / ".local").exists())
             self.assertTrue((source / ".state").is_dir())
@@ -109,24 +148,36 @@ class PublicReleaseTests(unittest.TestCase):
             (installed / ".state/config.json").write_text('{"username":"keep"}')
             with contextlib.redirect_stdout(io.StringIO()):
                 manage.uninstall(home, keep_state=True, yes=True)
-            self.assertEqual((installed / ".state/config.json").read_text(), '{"username":"keep"}')
+            self.assertEqual(
+                (installed / ".state/config.json").read_text(), '{"username":"keep"}'
+            )
             self.assertFalse((installed / "lib").exists())
-            with patch.object(os, "geteuid", return_value=1000), contextlib.redirect_stdout(io.StringIO()):
+            with (
+                patch.object(os, "geteuid", return_value=1000),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
                 manage.install(ROOT, no_engine=True, home=home)
-            self.assertEqual((installed / ".state/config.json").read_text(), '{"username":"keep"}')
+            self.assertEqual(
+                (installed / ".state/config.json").read_text(), '{"username":"keep"}'
+            )
             self.assertTrue((installed / "lib/jvcli/cli.py").is_file())
 
     def test_path_addition_is_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
             home = Path(td)
-            with patch.dict(os.environ, {"PATH": "/usr/bin"}), contextlib.redirect_stdout(io.StringIO()):
+            with (
+                patch.dict(os.environ, {"PATH": "/usr/bin"}),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
                 manage._path_notice(home, True)
                 manage._path_notice(home, True)
             self.assertEqual((home / ".bashrc").read_text().count(manage.PATH_LINE), 1)
 
     def test_version_file_is_canonical(self):
         self.assertEqual(cli.VERSION, (ROOT / "VERSION").read_text().strip())
-        self.assertNotRegex((ROOT / "lib/jvcli/cli.py").read_text(), r"(?m)^VERSION\s*=\s*['\"]\d")
+        self.assertNotRegex(
+            (ROOT / "lib/jvcli/cli.py").read_text(), r"(?m)^VERSION\s*=\s*['\"]\d"
+        )
 
     def test_release_archive_name_checksum_and_exclusions(self):
         with tempfile.TemporaryDirectory() as td:
@@ -144,11 +195,20 @@ class PublicReleaseTests(unittest.TestCase):
             archive = root / "dist/jv-cli-1.2.3-linux-x86_64.zip"
             checksum = archive.with_suffix(".zip.sha256")
             self.assertTrue(archive.is_file())
-            self.assertEqual(checksum.read_text().split()[0], hashlib.sha256(archive.read_bytes()).hexdigest())
+            self.assertEqual(
+                checksum.read_text().split()[0],
+                hashlib.sha256(archive.read_bytes()).hexdigest(),
+            )
             with zipfile.ZipFile(archive) as value:
                 names = value.namelist()
             self.assertIn("jv-cli/install.sh", names)
-            self.assertFalse(any(part in name for name in names for part in (".state/", "runtime/", ".env")))
+            self.assertFalse(
+                any(
+                    part in name
+                    for name in names
+                    for part in (".state/", "runtime/", ".env")
+                )
+            )
 
     def test_release_build_needs_no_credentials(self):
         text = (ROOT / "scripts/build_release.py").read_text()
@@ -161,15 +221,36 @@ class PublicReleaseTests(unittest.TestCase):
             checksum = Path(td) / "release.zip.sha256"
             archive.write_bytes(b"archive")
             checksum.write_text("0" * 64 + "  release.zip\n")
-            result = subprocess.run(["sh", str(ROOT / "scripts/install-from-github.sh"), "--verify-only",
-                                     str(archive), str(checksum)], capture_output=True, text=True)
+            result = subprocess.run(
+                [
+                    "sh",
+                    str(ROOT / "scripts/install-from-github.sh"),
+                    "--verify-only",
+                    str(archive),
+                    str(checksum),
+                ],
+                capture_output=True,
+                text=True,
+            )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("Checksum verification failed", result.stderr)
 
     def test_manifest_rejects_generated_private_files(self):
         names = {path.as_posix() for path in manage.public_files(ROOT)}
-        self.assertFalse(any(name.startswith((".state/", ".cache/", "runtime/", ".backups/", "dist/")) for name in names))
-        self.assertFalse(any("__pycache__/" in name or name.endswith((".pyc", ".pyo")) for name in names))
+        self.assertFalse(
+            any(
+                name.startswith(
+                    (".state/", ".cache/", "runtime/", ".backups/", "dist/")
+                )
+                for name in names
+            )
+        )
+        self.assertFalse(
+            any(
+                "__pycache__/" in name or name.endswith((".pyc", ".pyo"))
+                for name in names
+            )
+        )
 
 
 if __name__ == "__main__":

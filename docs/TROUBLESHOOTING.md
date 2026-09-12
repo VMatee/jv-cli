@@ -20,15 +20,15 @@ From the actual installed folder run `./install.sh`. Node 18+, npm and Python 3.
 
 ## Resume rejects --color
 
-That regression is covered: the launcher only passes `--color never` on the initial exec. Run `jvcli --version` and verify 0.4.0. Check for a stale PATH or an older extracted folder. Old 0.2.x histories are not automatically migrated.
+That regression is covered: the launcher only passes `--color never` on the initial exec. Run `jvcli --version` and verify 0.4.3. Check for a stale PATH or an older extracted folder. Old 0.2.x histories are not automatically migrated.
 
-## Raw tool JSON printed / malformed tool response
+## Legacy mode: raw tool JSON printed / malformed tool response
 
 Live diagnostics found Markdown-like damage to unfenced replies: array brackets were escaped, Python double-underscore names became bold markers, and quotes in code lost their JSON escaping. JV CLI now requests one fenced JSON block to protect the contents. It also accepts a standalone `JSON` language label immediately before that one complete block, as observed from the service. It does not strip arbitrary prose or guess how to reconstruct damaged code.
 
 The adapter requires a complete, validated action envelope before exposing any tool call to the engine. It preserves decoded command/patch contents when handling invalid escapes or literal newlines/tabs inside JSON strings. Multiline custom patches can use an explicit `input_lines` list instead of one large escaped string. Missing quotes, truncated objects, unknown tools and invalid arguments are not guessed.
 
-After a **confirmed completed** JV job returns invalid tool output, the adapter can request at most two corrected responses, showing each attempt and its job ID. These are additional model jobs and can consume quota. Earlier confirmed tool results remain in the prompt; rejected calls are not executed. Repeated invalid responses stop the turn with a nonzero exit and an inspection command:
+In legacy coding mode, after a **confirmed completed** JV job returns invalid tool output, the adapter can request at most two corrected responses, showing each attempt and its job ID. These are additional model jobs and can consume quota. Earlier confirmed tool results remain in the prompt; rejected calls are not executed. Repeated invalid responses stop the turn with a nonzero exit and an inspection command:
 
 ```bash
 jvcli job JOB_ID --json
@@ -40,7 +40,7 @@ If final text literally contains `\n`, this can be a double-escaped model respon
 
 ## Generic error answer even though the JV job succeeded
 
-The API's `succeeded` status means it completed a job, not that the coding task succeeded. The exact observed generic responses beginning “I'm having a hard time fulfilling your request”, “I encountered an error doing what you asked”, and “Sorry, something went wrong” use the same bounded correction path instead of counting as a successful coding turn. Specific explanations or refusals are still delivered normally.
+In legacy coding mode, the API's `succeeded` status means it completed a job, not that the coding task succeeded. The exact observed generic responses beginning “I'm having a hard time fulfilling your request”, “I encountered an error doing what you asked”, and “Sorry, something went wrong” use the same bounded correction path instead of counting as a successful coding turn. Specific explanations or refusals are still delivered normally.
 
 If `jvcli ask "Reply with exactly: JV API OK"` works but coding fails, authentication/basic inference are working; structured tool output can still fail. `--allow-network` permits tool downloads, but does not repair model JSON. Use a fresh coding session after updating; inspect the final reported job if corrections are exhausted.
 

@@ -1,46 +1,18 @@
-JV CLI 0.4.0 current Codex parity integration (2026-09-08)
-267 tests run: 266 passed, 1 skipped (Python 3.10 tomllib), 0 failed
-Focused structured suite: 38 passed
-Existing real pinned-engine suite: 14/14 passed
-Additional real pinned-engine parity suite: 8/8 passed
-Initial images, update_plan, serial coding and resume: offline PASS
-view_image structured results and custom apply_patch: offline real-engine PASS
-Live custom apply_patch + shell: PASS, 3 rounds, zero repairs
-Live images: BLOCKED by account provider assignment; no image inference completed
-Live view_image/web UI: NOT RUN after deterministic attachment-assignment rejection
-Package: 66 manifest files; 67 ZIP entries; reproducible and isolated checks PASS
-VERSION unchanged: 0.4.0; engine unchanged: 0.149.1
-Release-candidate readiness: NO
-See docs/CODEX_PARITY.md and docs/TEST_REPORT.md.
-
-Historical acceptance record follows (does not certify the current integration):
-
-JV CLI 0.4.0 structured release-candidate validation (2026-09-08)
-
-247 tests run: 246 passed, 1 skipped, 0 failed
-1 environment-specific test skipped on Python 3.10 (tomllib is Python 3.11+)
-Real pinned-engine acceptance: PASS (14/14 default checks)
-Structured real-engine loopback shell continuation: PASS (2 rounds, 0 repairs)
-Structured production client acceptance: PASS (operator run audited; 2 rounds, exit 0, 0 repairs)
-Structured mode: OPT-IN with JVCLI_AGENT_API=1
-Certified structured tools: shell_command (command argument)
-Legacy /v1/jobs and job/download regressions: PASS
-Compact/verbose output and visible failures: PASS
-TTY prose, code preservation and unchanged JSONL output: PASS
-Waiting-status deduplication: PASS
-Network-enabled tool reaches local HTTP fixture: PASS
-Network-enabled mode still denies outside-workspace writes: PASS
-Long-fenced final decoding with nested examples: PASS
-Varied Rust discovery loop stops without partial batch execution: PASS
-Interactive permission aliases, default/network-enabled/network-disabled/read-only: PASS
-Package manifest verification: PASS
-Deterministic release build: PASS
-Extracted release verification: PASS
-Fresh temporary-HOME install, version, and doctor: PASS
-Live JV API: one controlled production structured flow passed; no repeat inference during audit
-Rust installation: NOT PERFORMED; no other project's toolchain used
-User demo project: NOT MODIFIED
-Per-job timeout default: 300 seconds; configurable via JVCLI_WAIT_TIMEOUT
-Pinned engine: 0.149.1 (unchanged)
-
-See TEST_REPORT.md for scope, limitations, and separate historical live evidence.
+JVCLI 0.4.3 canonical verification; Scenario 01 production acceptance completed 2026-09-12.
+JVCLI suite: 308 cases; 307 passed; 1 Python 3.10 TOML skip.
+Focused completion: 35 passed (17 new methods with negative subcases).
+Central core: 648 passed; 1 opt-in skip. Paired current client: 4 passed separately.
+Legacy provider replacement path: 91 passed (overlaps Central); max two; double malformed fails closed. Fresh JV-WIRE uses generation 1 plus corrections 2-5 only; no generation 6.
+Paired/provider/structured-image/file subset: 180 passed (overlapping).
+ChatGPT full suite: 258 passed after bounded Copy-capture, pointer-activation and cleanup compatibility changes.
+Gemini full suite: 271 passed; provider source unchanged.
+Stock Codex 0.149.1 engine smoke: 15 checks passed.
+Stock Codex 0.149.1 parity: 9 checks passed.
+Agent smoke: 2 committed turns; 8 logical responses; 3 workspace tools; 1 evidence.
+Completion smoke: 16 logical responses; 6 views; 6 notes; max 4 active; 1 review; 3 resolutions.
+Ruff: Central 69 existing; full CLI scope 124 existing; zero new; changed CLI files zero.
+Formatter: changed CLI files and required Central scope pass.
+Compilation: CLI 36 Python files; Server 142. Shell syntax: CLI 8; Server 33.
+Build/extracted integrity/reproducibility/temporary offline installation: recorded in audit.
+Production Server/provider deployment and restart were performed for acceptance; no rollback was required. GitHub release publication remains separate.
+Live inference and Scenario 01: ACCEPTED 2026-09-12 with SCENARIO_RC=0. No credential contents were read by the audit.

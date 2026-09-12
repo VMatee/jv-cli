@@ -4,11 +4,15 @@ JV CLI is an AI coding-agent CLI that connects to JV LLM while running developme
 
 Command: `jvcli`
 
-Current source version: **0.4.0** (canonical value: [VERSION](VERSION)). The engine is pinned to `@openai/codex@0.149.1`.
+Current source version: **0.4.3** (canonical value: [VERSION](VERSION)). The engine is pinned to `@openai/codex@0.149.1`.
 
 The current source also contains an opt-in pilot for JV's structured Responses API. Legacy `/v1/jobs` coding remains the default during the controlled rollout. Workspace protections remain enabled; there is no YOLO mode, automatic sudo elevation, or passwordless-sudo setup. A source version on `main` is not a published GitHub Release.
 
+The canonical 0.4.3 source implements [durable evidence and bounded agent completion](docs/AGENT_COMPLETION.md). Completion can atomically reconcile stale progress plans using an explicit model-authored commitment. Scenario 01 received production acceptance on 2026-09-12; GitHub publication remains a separate release gate. The embedded engine remains exactly 0.149.1.
+
 Structured mode now supports initial workspace PNG/JPEG/WebP images via `exec/resume --image PATH`, plus local `shell_command`, `update_plan`, `view_image` image results and exact custom/freeform `apply_patch`. These follow accepted contract `52be898`; current production certification is recorded in the audit. See [the pinned-engine compatibility audit](docs/CODEX_PARITY.md). Legacy direct attachments remain available through `jvcli ask --file screenshot.png "Analyze this screenshot"`.
+
+Structured tool-driven tasks require a model-authored completion commitment before a successful final. Old 0.4.1/0.4.2 structured-agent journals are preserved but cannot be migrated into the 0.4.3 completion-v2 contract; start a fresh task.
 
 See [the changelog](docs/CHANGELOG.md) for version history and [the test report](docs/TEST_REPORT.md) for validation and limitations.
 
@@ -298,7 +302,7 @@ python3 -B scripts/engine_smoke.py
 
 The unit suite uses temporary homes and mock services. The engine smoke test uses the real pinned local engine with a scripted loopback model and does not contact the live JV API. `scripts/live_smoke.py` is optional, requires an account, asks for confirmation, and may consume quota.
 
-The current integration totals are recorded in [the test report](docs/TEST_REPORT.md). The real-engine suites cover structured shell, view_image, custom apply_patch, resume, local web build/browser checks, legacy behavior, sandbox denial and network policy. Production custom apply_patch plus shell passed; production images remain unaccepted because the tested account's provider assignment rejects structured attachments. These are scoped checks, not a guarantee about every model or operating system.
+The current integration totals are recorded in [the test report](docs/TEST_REPORT.md). The real-engine suites cover structured shell, view_image, custom apply_patch, resume, local web build/browser checks, legacy behavior, sandbox denial and network policy. Production Scenario 01 additionally accepted the six-page scanned-PDF visual workflow on 2026-09-12 through the coordinated JV-WIRE-V1 Server path. These are scoped checks, not a guarantee about every model or operating system.
 
 To additionally check generated Flask files and HTML/CSS responses after a malformed reply, pass `--flask-python /absolute/path/to/venv/bin/python` to `engine_smoke.py`, using a disposable virtual environment that already contains Flask. The check uses Flask's test client, installs no packages itself, and leaves no server running. It tests adapter/tool integration, not the live model's coding ability.
 
@@ -321,7 +325,7 @@ jvcli CLI
     -> sandboxed local tools in the selected workspace
 ```
 
-The Python modules separate CLI/session management, legacy text-envelope conversion, native structured translation/state, transport, adapter handling, and filesystem safety. Offline structured certification covers initial images, `shell_command`, `update_plan`, `view_image`, custom `apply_patch`, serial continuation and resume; live image acceptance remains pending for a compatible provider assignment. Legacy mode retains its existing function/custom-tool support. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The Python modules separate CLI/session management, legacy text-envelope conversion, native structured translation/state, transport, adapter handling, and filesystem safety. Structured certification covers initial images, `shell_command`, `update_plan`, `view_image`, custom `apply_patch`, serial continuation and resume; the coordinated production path also passed Scenario 01 live visual acceptance on 2026-09-12. Legacy mode retains its existing function/custom-tool support. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Upstream Attribution
 
