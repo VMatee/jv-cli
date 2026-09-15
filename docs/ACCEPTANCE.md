@@ -1,110 +1,23 @@
-# Acceptance before user rollout
+# Check your installation
 
-## 0.4.4 release gates
-
-Use the focused agent/paired Central tests and real `scripts/agent_smoke.py` and `scripts/completion_smoke.py` in addition to all existing suites. A successful exit requires the completion commitment in structured agentic tasks; fixture truth and produced artifacts must still be inspected separately. Offline tests alone do not imply production acceptance. The canonical 0.4.3 release passed Scenario 01 production acceptance on 2026-09-12. The 0.4.4 patch must repeat Scenario 01 and final artifact inspection before production acceptance. See [AGENT_COMPLETION.md](AGENT_COMPLETION.md) and [TEST_REPORT.md](TEST_REPORT.md).
-
-
-Do not interpret passing tests as a guarantee about every real model, Ubuntu kernel, or production deployment. Record the target checks below for each deployment class.
-
-## 1. Verify installation and offline regressions
-
-Run as your normal user from a trusted clone:
+After installing or updating:
 
 ```bash
-./verify.sh
-./install.sh
-$HOME/.local/bin/jvcli --version
-$HOME/.local/bin/jvcli doctor --json
-./test.sh
+jvcli --version
+jvcli doctor
+jvcli login
 ```
 
-Expected package version: `0.4.4`. Expected engine: `0.149.1`. `doctor` checks local configuration/version/help, not live authentication or tool execution. `test.sh` uses only loopback mock services and fake engine scripts, not real credentials.
+The diagnostic command checks your local setup. It does not prove that every account capability or task will work.
 
-The installer must not require sudo or create a global executable. It creates only the per-user application and launcher paths. It reports a missing `~/.local/bin` PATH entry and changes `~/.bashrc` only with explicit `--add-path`.
-
-## 2. Real-engine contract and sandbox acceptance
+Start in a disposable project with no sensitive files:
 
 ```bash
-python3 -B scripts/engine_smoke.py
+mkdir -p ~/jvcli-tryout
+cd ~/jvcli-tryout
+jvcli exec --read-only "Describe this directory"
 ```
 
-This uses the installed **real** engine, a scripted local model, and disposable files under `.state/engine-checks/`. It makes no JV API calls. It checks:
+An authenticated task can consume service quota. Review the result, then try a small file-editing task and inspect its output yourself. Confirm that the selected permissions match your intention. Use `jvcli sessions` and `jvcli resume SESSION_ID` to check saved work.
 
-- Actual shell reads return a unique on-disk marker to the next model request.
-- A second resumed turn applies a custom patch and changes a real fixture file.
-- An attempted outside-workspace write leaves the protected fixture unchanged.
-- Read-only mode prevents a workspace write.
-- With tool networking disabled, a tool cannot reach the local fixture HTTP server.
-- With tool networking enabled, a tool reaches that server, but still cannot write outside the workspace.
-
-The script prints JSON and saves `report.json` in its fixture directory. It exits nonzero on failure. These checks are intentionally conservative: if your environment cannot support them, investigate rather than weakening the sandbox. The tests are not a complete sandbox penetration test.
-
-The default checks also run one structured two-round loopback flow through the real pinned engine. It validates the mandatory remote fields, certified shell-only declaration, actual local command result, exact `call_id`, `previous_response_id`, resent instructions/tools, durable state and zero client prompt repairs. This remains scripted model output and does not contact JV Server.
-
-The script passed against 0.149.1 during release preparation. Keep a fresh report from each Ubuntu deployment class.
-
-It also exercises malformed-response correction after a real shell tool, generic-error recovery, and repeated invalid batches that must fail without executing even their valid member. Optionally pass `--flask-python /absolute/path/to/disposable/venv/bin/python` with Flask already installed to create a small Flask app through the real patch tool and verify its HTML/CSS with Flask's test client. This optional check installs nothing and starts no persistent server. Scripted replies do not establish live-model compatibility.
-
-The default checks also exercise a standalone JSON label followed by a fenced patch, shell call and final response through the real engine, including four-backtick fences around nested code examples. Patch contents and subsequent tool output must retain their literal underscores and quotes. A simulated missing-Rust loop must stop before executing any member of its final rejected batch. This check uses shell functions, installs no compiler and never searches other projects. See TEST_REPORT.md for the separate historical live Flask test and its limits.
-
-## 3. Live API contract
-
-```bash
-./jvcli login
-python3 -B scripts/live_smoke.py
-```
-
-The script identifies the API/user and asks you to type `RUN`. It signs in, uploads its harmless text fixture, polls for success, submits a follow-up using the returned conversation ID, verifies another text response, and attempts logout. It creates two jobs and may consume quota. No passwords are printed or saved.
-
-This checks the API contract, not coding-model ability. Generated files may not be produced by this prompt; their real-server download path needs a separate applicable test. Keep the IDs/status, not credentials, as evidence.
-
-For the structured candidate, perform exactly one additional controlled coding flow from a disposable workspace after offline checks pass:
-
-```bash
-JVCLI_AGENT_API=1 jvcli exec --read-only \
-  "Use shell_command once to print the current directory, then report the exact result."
-```
-
-Record both response IDs, the exact call ID, the continuation's `previous_response_id`, evidence that the actual tool output reached round two, final Codex exit status and `response_repairs=0`. Do not use a real user project or repeat provider rounds after a complete proof.
-
-## 4. Real model, real tools, multiple turns
-
-Use a disposable project without private data. Do not test initially against your production repository:
-
-```bash
-mkdir -p ~/Desktop/jv-acceptance-project
-cd ~/Desktop/jv-acceptance-project
-printf 'print("hello")\n' > hello.py
-jvcli exec --read-only \
-  "Read hello.py, run python3 hello.py, and explain its actual output. Do not modify files."
-```
-
-Verify that a local command runs and the final explanation matches the file. Then:
-
-```bash
-jvcli
-```
-
-First turn: inspect `hello.py`. Second turn: change it to print `Hello from JV CLI`, use the patch tool, run it, and report the output. Check manually:
-
-```bash
-cat hello.py
-python3 hello.py
-```
-
-Run `jvcli sessions`, exit, and resume that JV session in the same directory. Check that a second prompt works without `--color` errors. Check that failed commands produce honest output rather than a false success. Repeat meaningful tasks with the model actually assigned to your account.
-
-## 5. Failure and operational acceptance
-
-Check incorrect credentials, expired tokens where testable, a deliberate failed command, malformed model output if a controlled test backend is available, Ctrl+C while polling, and a reconnect/resume after restart. Do not repeatedly submit ambiguous POSTs to the real service simply to test failure paths; offline tests already exercise them.
-
-For a generated-file-capable account, use direct `ask/job --download-dir` and verify an authenticated download, filename collision handling, file contents, and no execution. For Flask/dependency tasks explicitly enable network, use `.venv`, bind localhost, use a bounded smoke test, and stop the test server. Verify no unwanted global package/profile/system changes.
-
-Test the preserving updater on a copy of the installation, including a failed download with a working runtime present. Check deletion/removal after all tasks and detached services have stopped. Removing the launcher does not undo project edits or delete remote service data.
-
-## Go/no-go record
-
-Record package SHA-256, Ubuntu version, kernel, architecture, Python/Node versions, exact engine version, engine-check report, live-service check result, and actual coding/multi-turn task outcomes. Do not record secrets.
-
-Deploy to a small internal pilot first. Expand only after all applicable checks pass and the remaining limitations are acceptable. No package or test count can guarantee bug-free behavior on every user machine.
+Before using the application for important work, test your own workflow and review generated files. Local diagnostics and automated tests are not a guarantee of production acceptance for every workload. Keep a backup of important project files.

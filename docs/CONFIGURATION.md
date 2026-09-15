@@ -1,11 +1,16 @@
 # Configuration
 
-## Structured task completion (0.4.3)
+## Account and service address
 
-`JVCLI_AGENT_API=1` enables the structured agent protocol. `JVCLI_MAX_REQUESTS` (40 default, 1–500) is frozen per task and includes metadata and semantic-review inferences. At most three completion reviews, 64 metadata commits and 16 KiB of model evidence are permitted per task. There is no runtime bypass for the completion gate. See [AGENT_COMPLETION.md](AGENT_COMPLETION.md).
+```bash
+jvcli login --username your-user --base-url https://ai.openjvspace.com
+jvcli auth status
+jvcli logout
+```
 
+`login` verifies your account and saves your username and service address. Passwords and authentication tokens are not intentionally saved. Each process authenticates when needed. `auth status` shows configuration, not a live sign-in check. `logout` forgets saved account settings; exit other running sessions separately.
 
-`jvcli login` saves `.state/config.json` containing only:
+Saved configuration contains only these fields:
 
 ```json
 {
@@ -14,92 +19,42 @@
 }
 ```
 
-Unknown config fields fail validation. Never add a password or token. Explicit login options override environment/account settings; environment values override saved defaults.
-
-```bash
-jvcli login --username your-user --base-url https://your-jv-server.example
-jvcli auth status
-jvcli logout
-```
-
-`login` verifies and revokes its temporary token immediately; it does not create a permanently signed-in shell. `logout` forgets the stored username/origin; other running sessions must exit separately to revoke their tokens. `auth status` reports configuration, not a live authentication check.
+Do not add a password or token. Explicit login options take priority over environment settings, which take priority over saved defaults.
 
 ## Environment settings
 
-| Variable | Default / meaning |
+| Setting | Default / purpose |
 | --- | --- |
-| `JV_API_BASE_URL` | Saved origin or https://ai.openjvspace.com |
-| `JV_API_USERNAME` | Saved username, otherwise prompt on a terminal |
-| `JV_API_PASSWORD` | Automation only; normally use hidden input |
-| `JVCLI_HOME` | `INSTALL_ROOT/.state`; overriding changes where state is owned |
-| `JVCLI_CODEX_BIN` | Optional explicit executable path; must report pinned version |
-| `JVCLI_POLL_INTERVAL` | 2 seconds |
-| `JVCLI_REQUEST_TIMEOUT` | 30 seconds per blocking network operation |
-| `JVCLI_WAIT_TIMEOUT` | 300 seconds (5 minutes) per model job's polling deadline |
-| `JVCLI_TURN_TIMEOUT` | 3600 seconds for a coding turn |
-| `JVCLI_MAX_REQUESTS` | 40 model requests per turn, maximum 500 |
-| `JVCLI_AGENT_API` | `0`; set exactly `1` to opt into structured `/v1/responses` |
+| `JV_API_BASE_URL` | Saved address or `https://ai.openjvspace.com` |
+| `JV_API_USERNAME` | Saved username, otherwise an interactive prompt |
+| `JV_API_PASSWORD` | Optional approved automation; normally use hidden input |
+| `JVCLI_POLL_INTERVAL` | 2 seconds between status checks |
+| `JVCLI_REQUEST_TIMEOUT` | 30 seconds per network operation |
+| `JVCLI_WAIT_TIMEOUT` | 300 seconds per request's status wait |
+| `JVCLI_TURN_TIMEOUT` | 3600 seconds per coding turn |
+| `JVCLI_MAX_REQUESTS` | 40 requests per turn; valid range 1–500 |
+| `JVCLI_AGENT_API` | Set to `1` for optional image-assisted task mode |
 
-Time values must be finite and positive. Request socket timeouts are not a guarantee against every slow-response/OS scheduling condition; cancellation is best-effort for an already-blocked network operation.
-
-To change the per-call wait later, for example to ten minutes:
+Time values must be finite and positive. For example, allow a ten-minute response wait:
 
 ```bash
-JVCLI_WAIT_TIMEOUT=600 jvcli --allow-network
+JVCLI_WAIT_TIMEOUT=600 jvcli
 ```
 
-The engine SSE deadline accommodates the legacy initial job plus up to two correction jobs and submission overhead. Structured mode uses the same conservative local stream bound but performs no prompt-repair jobs. The whole coding turn still has its independent `JVCLI_TURN_TIMEOUT`. A timeout stops local waiting, not the remote job/response. Server-side authentication failures require operator investigation; extra waiting cannot authenticate a provider.
+A timeout stops local waiting; it does not guarantee remote work was cancelled. Check the known request/session before submitting the same task again.
 
-HTTPS is required except loopback HTTP. Base origins must not contain embedded credentials, query, fragment or API paths. `/v1/...` routes are added by the client. Ambient proxies are disabled. TLS certificate verification is not disabled; private deployments must arrange trusted certificates separately.
+## Permissions
 
-## Defaults and limits
+Normal sessions can edit the selected workspace and use network-enabled project tools. Use `--read-only` for inspection or `--no-network` to disable project-tool networking. The JV service connection still requires internet access.
 
-- Pinned engine: 0.149.1; model alias: `jv-local`.
-- Legacy `/v1/jobs` remains the coding default. `JVCLI_AGENT_API=1` selects the structured pilot and must match when resuming a saved session.
-- Default: workspace-write with tool networking, no elevation approval, no automatic sandbox bypass.
-- `--read-only` requests denial of tool writes and disables tool networking.
-- `--no-network` disables tool networking in write mode; JV API traffic still requires networking.
-- `--allow-network` explicitly enables tool networking only for workspace-write. It does not grant sudo or system-wide file access. Network flags work before or after `exec`/`resume`; a subcommand flag overrides a flag before the subcommand.
-- Max incoming adapter JSON: 8 MiB in legacy mode; 17 MiB in structured mode, with separate 64 KiB structured metadata limits.
-- JV text submission: 100 KiB; coding prompt budget: 96 KiB.
-- Uploads: at most 10 files, 25 MiB each, 100 MiB combined; regular non-symlink files.
-- Downloads: at most 10 files, 25 MiB each, 100 MiB combined; exact declared size, no overwrite.
-- Model output: at most 8 tool calls in an envelope. A fourth identical action in a turn stops the loop.
-- Legacy `/v1/jobs` invalid completed model responses: at most two correction jobs per response, also counted against `JVCLI_MAX_REQUESTS` and the turn timeout. Progress is shown; session metadata records `model_requests` and `response_repairs`. Additional jobs can consume service quota.
-- Fresh structured JV-WIRE formatting correction is Server-owned: generation 1 is primary, generations 2-5 are format corrections only, and generation 6 is forbidden. JVCLI does not locally salvage or repair rejected wire text.
-- ID validation: ASCII letters, digits, hyphens and underscores. Other opaque-ID formats are unsupported.
-- Structured mode admits `shell_command` and `update_plan`, plus initial user-message PNG/JPEG/WebP images. The certified custom apply_patch and image-only view_image result arrays are supported. Other custom tools, hosted/MCP tools, audio, remote streaming and parallel calls remain unsupported.
-- Each structured logical round stores its normalized body, idempotency key, response ID and publication state privately under the session directory. State is bounded and atomically replaced.
+Flags work before or after `exec`/`resume`; a subcommand flag overrides a preceding flag. `--read-only --allow-network` is invalid. `/permissions` shows the current policy without changing it; restart with the desired flags to change policy.
 
-Some limits are deliberately conservative. The server can enforce stricter limits. The tool argument checker covers common types/required fields, not every JSON Schema keyword.
+## Images and saved sessions
 
-## Generated engine configuration
+With `JVCLI_AGENT_API=1`, `exec` and `resume` accept up to four `--image PATH` options. Use PNG, JPEG, or WebP files inside the selected workspace, without symlinks. Account capabilities and service size limits also apply.
 
-Each session gets independent `.state/runs/ID/engine/config.toml`, catalog and instructions. They are regenerated on launch/resume; edit the wrapper only after reviewing tests rather than manually changing generated files. Adapter auth uses `env_key`; no token is written into TOML.
+Resume with the same workspace, account, service address, and optional mode. Session files can contain project content and images. Keep application state and backups private and do not edit session files manually.
 
-The tool HOME/TMPDIR/cache are private local paths. `PIP_REQUIRE_VIRTUALENV=true` discourages global pip installation. The engine environment is restricted rather than a copy of the invoking shell: custom PATH-based tooling may work, but arbitrary application secrets or SDK environment settings are not propagated automatically.
+## Service connections
 
-## Structured initial images
-
-With `JVCLI_AGENT_API=1`, `exec` and `resume` accept repeated `--image PATH` options (up to four PNG/JPEG/WebP images). Paths must be beneath the workspace with no symlinks. Private snapshots and durable image request bodies remain in session state. The structured journal is bounded to 64 MiB; non-image metadata remains bounded to 64 KiB. `auto` and `high` image detail are supported; remote URLs and original detail are rejected. See [the parity audit](CODEX_PARITY.md) for certified wire forms and live acceptance status.
-
-## Bounded visual context (deployed architecture; originated in 0.4.1)
-
-Historical `view_image` results are validated and matched to their durable call
-and result digests on every replay. Their cumulative count is not an active-image
-limit. With the coordinated Server extension, the four most recently observed
-distinct images stay active; older observations remain reference-only metadata.
-Only the current continuation result is sent by JVCLI. Per-request and per-result
-image counts remain four; current decoded images remain bounded to 12 MiB.
-
-Task limits remain `JVCLI_MAX_REQUESTS=40` per turn (configurable 1–500), 500 durable
-rounds per saved session, 64 MiB durable state, 17 MiB local/remote structured HTTP
-requests and 64 KiB normalized remote metadata. A turn defaults to one hour with
-five minutes per job. The Server extension separately freezes
-`COMBINED_AGENT_MAX_ROUNDS=40` (1–500) when a conversation starts. Budgets are not
-reset by image eviction or reinspection. The stricter bound applies.
-
-Pinned Codex still sends full local history; large replayed images can reach the
-unchanged 17 MiB local request ceiling before the round budget. This change bounds
-provider attachments, not arbitrary full-history engine memory. See
-[VISUAL_CONTEXT.md](VISUAL_CONTEXT.md). Public contract `52be898` is not updated.
+Use an HTTPS origin without embedded credentials, query strings, fragments, or `/v1/...` paths. Loopback HTTP is supported for local testing only. TLS verification remains enabled. Configure trusted certificates for private deployments rather than disabling checks.

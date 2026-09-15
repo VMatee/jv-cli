@@ -1,89 +1,52 @@
 # Troubleshooting
 
-## Command not found
+## `jvcli` is not found
 
-Normal installs create `~/.local/bin/jvcli`. If that directory is not in PATH, use:
+Add the per-user command directory to your current shell:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
+jvcli --version
 ```
 
-Or call `$HOME/.local/bin/jvcli` directly. `./install.sh --add-path` may add one idempotent line to `~/.bashrc` when explicitly requested. Portable/development users can source `activate.sh`. Do not install an unrelated suggested `jcli` package.
+You can also run `$HOME/.local/bin/jvcli` directly. Use `./install.sh --add-path` only if you want the installer to update your shell startup file.
 
-## Username not configured / password requested again
+## Installation is incomplete
 
-Run `jvcli login`. Username and origin are saved after successful authentication. Tokens/passwords are not persisted, so each process asks again. That is intentional, not a login failure. For errors use `jvcli auth status`; it does not validate credentials online.
+Check that Python 3.10+, Node.js 18+, and npm are installed and network access is available. From the trusted installed or extracted application directory, run `./install.sh`, then `jvcli doctor`. Do not install an unrelated similarly named system package.
 
-## Pinned engine absent / mismatched
+## The password is requested again
 
-From the actual installed folder run `./install.sh`. Node 18+, npm and Python 3.10+ are prerequisites. The installer only changes its local runtime. Do not globally upgrade npm just because it prints an update notice. No binary was prebuilt in this ZIP.
+This is expected: JV CLI saves your username and service address, not your password. Run `jvcli login` to check account setup. `jvcli auth status` displays saved configuration but does not verify credentials online. Ask your administrator about account restrictions; do not share passwords in support reports.
 
-## Resume rejects --color
+## A request takes too long
 
-That regression is covered: the launcher only passes `--color never` on the initial exec. Run `jvcli --version` and verify 0.4.4. Check for a stale PATH or an older extracted folder. Old 0.2.x histories are not automatically migrated.
+Increase `JVCLI_WAIT_TIMEOUT` if your service needs more time. A timeout or connection loss may leave remote work running. Check its known ID or saved session before starting another request; repeated submissions can duplicate work and consume quota.
 
-## Legacy mode: raw tool JSON printed / malformed tool response
+## A task stops with an error
 
-Live diagnostics found Markdown-like damage to unfenced replies: array brackets were escaped, Python double-underscore names became bold markers, and quotes in code lost their JSON escaping. JV CLI now requests one fenced JSON block to protect the contents. It also accepts a standalone `JSON` language label immediately before that one complete block, as observed from the service. It does not strip arbitrary prose or guess how to reconstruct damaged code.
+Read the final error and review the files and test results already produced. Failed or interrupted commands can leave partial file changes. Inspect affected files before continuing. Do not treat file existence or a completion message as proof that output is correct.
 
-The adapter requires a complete, validated action envelope before exposing any tool call to the engine. It preserves decoded command/patch contents when handling invalid escapes or literal newlines/tabs inside JSON strings. Multiline custom patches can use an explicit `input_lines` list instead of one large escaped string. Missing quotes, truncated objects, unknown tools and invalid arguments are not guessed.
+Malformed or unsupported responses stop safely. Keep the error code and version for support, but omit credentials and private project content. Repeated retries will not resolve an unsupported capability.
 
-In legacy coding mode, after a **confirmed completed** JV job returns invalid tool output, the adapter can request at most two corrected responses, showing each attempt and its job ID. These are additional model jobs and can consume quota. Earlier confirmed tool results remain in the prompt; rejected calls are not executed. Repeated invalid responses stop the turn with a nonzero exit and an inspection command:
+## File writes or networking are denied
 
-```bash
-jvcli job JOB_ID --json
-```
+Use `/permissions` to check the current session. `--read-only` denies writes and project-tool networking. `--no-network` disables project-tool networking while preserving workspace edits. Restart with the intended flags; `--allow-network` cannot be combined with `--read-only`.
 
-This correction path does not resubmit a failed/ambiguous job creation or a failed poll. It cannot guarantee that the assigned model will produce usable tools. Do not share a complete job response without reviewing it for private project data.
+If system protection prevents a task from running, collect `jvcli doctor` output and contact support. Do not disable system security or grant administrator access merely to force a task through.
 
-If final text literally contains `\n`, this can be a double-escaped model response. The launcher does not blindly unescape all backslashes, which would damage code and paths.
+## A saved session cannot resume
 
-## Generic error answer even though the JV job succeeded
+Use the same directory, account, service address, and optional task mode. Close another process using that session. Older incompatible sessions may require a fresh task; preserve their files rather than modifying them manually.
 
-In legacy coding mode, the API's `succeeded` status means it completed a job, not that the coding task succeeded. The exact observed generic responses beginning “I'm having a hard time fulfilling your request”, “I encountered an error doing what you asked”, and “Sorry, something went wrong” use the same bounded correction path instead of counting as a successful coding turn. Specific explanations or refusals are still delivered normally.
+## An image or attachment is rejected
 
-If `jvcli ask "Reply with exactly: JV API OK"` works but coding fails, authentication/basic inference are working; structured tool output can still fail. `--allow-network` permits tool downloads, but does not repair model JSON. Use a fresh coding session after updating; inspect the final reported job if corrections are exhausted.
+Check the file type, size, account capability, and path. Image-assisted tasks accept up to four PNG/JPEG/WebP images inside the workspace and reject symlinks. A filename extension alone does not make a format supported. Ask your administrator whether the required capability is enabled.
 
-## Model claims the client workspace is not mounted
+## An update is refused
 
-JV CLI's tools run on the user's PC; the API server does not need a mount of the user's project. A missing path in the server's environment is not evidence that the client workspace is missing. In live testing, the model confused these environments even after a successful local shell result.
+Close running JV CLI sessions and verify the new package before retrying. Preserve any locally modified source files. Never overwrite a modified checkout or delete application state to make an update proceed.
 
-The bridge instructions now explicitly distinguish the external client executor from the API server and ask for protocol messages, not server-side tool execution. Update JV CLI and start a fresh session rather than resuming the mistaken explanation. Do not move your project, expose your home directory to the server, or disable sandboxing to solve this response-format/context issue.
+## Reporting an issue
 
-A syntactically valid final explanation can still be wrong, and an API job's `succeeded` status or CLI exit 0 does not certify the requested deliverable. Inspect actual tool results and tests; do not treat every refusal as a parsing error or retry it indefinitely.
-
-## Command exit 128 from git log
-
-An initialized repository with no commit makes `git log` fail. It is not necessarily an installation failure. Review the command/output and let the agent handle that state. Do not commit secrets or generated state just to silence an error.
-
-## Waiting after a tool completes
-
-The next model job may still be queued/running. The launcher prints waiting status periodically; the SSE adapter sends keepalives. The default per-job polling limit is five minutes; the whole coding turn is limited to one hour. Change the job limit with `JVCLI_WAIT_TIMEOUT=600 jvcli` for ten minutes. The engine SSE deadline is derived from the job budgets because comment keepalives do not reset its event-idle timer. Interrupting may leave a server job running. Check `/status` or the saved last job ID before resubmitting.
-
-If the server reports `waiting_for_auth` after login succeeds, the submitted job is awaiting a server-side authentication step. Increasing a local timeout does not resolve that state. Inspect the existing job and have the server operator check provider authentication instead of creating duplicate tasks.
-
-## Ambiguous job submission
-
-Do not automatically retry. A job can have been created even if the response was lost or malformed. If an ID is available use `jvcli job JOB_ID`; otherwise inspect the service/account through its normal interface. The API example does not establish an idempotency or cancellation endpoint this wrapper can safely invent.
-
-## Sandbox / kernel / network errors
-
-Successful shell and patch results mean local tools are available even if a later verification command fails. The shared /tmp directory can be read-only: use the supplied TMPDIR or project-local temporary storage, not fixed /tmp log filenames. Respect command-policy rejections; do not bypass a rejected delete operation through a different interpreter.
-
-For Flask checks, prefer importing the app with the project's .venv Python and using app.test_client() with status/content assertions. This needs no background server, fixed port, log redirection or deletion. For an actual HTTP check, use an ephemeral localhost port, no debugger/reloader, and guaranteed shutdown. Do not disable the sandbox to make these tests pass.
-
-Run `python3 -B scripts/engine_smoke.py` as a normal user. Keep its `.state/engine-checks/.../report.json`. Do not disable the sandbox to force the test to pass. This build cannot certify arbitrary Ubuntu/kernel/container configurations.
-
-Network access from tools is enabled by default in workspace-write mode; `jvcli --allow-network` is still accepted. Use `jvcli --no-network` to deny tool networking, or `--read-only` to deny both tool writes and tool networking. Use a project-local virtual environment. Python's `venv` support may need a host prerequisite. Servers should bind 127.0.0.1, not the public interface. Networking does not grant sudo or remove workspace-write boundaries.
-
-## Existing project .codex/config.toml rejected
-
-This build deliberately refuses to load project engine configurations that may enable hooks or MCP programs. Use a reviewed clean project copy. Do not blindly delete existing project configuration. Merely having a `.codex/` directory without that config file is not this check's trigger.
-
-Your personal `~/.codex/config.toml` is not a project config and does not need to be removed or renamed. JV CLI ignores it and uses an isolated per-session `CODEX_HOME` under its own state directory.
-
-## Problems after upgrade
-
-Close all sessions. `./verify.sh` checks source integrity. The previous replaced source files are under `.backups/source-...`; state/runtime are not overwritten by the updater. Keep the previous ZIP for an explicit rollback. Never delete your active project to repair the launcher.
-
-For a bug report provide the version, `doctor --json`, exit status, sanitized terminal output, and acceptance report. Do not share passwords, tokens, authorization headers, full session histories, private project code, or all of `.state/`.
+Include the version, operating system, command with sensitive arguments removed, error code, and a minimal reproducible example. Review diagnostics before sharing. Do not upload whole session directories, logs, private files, tokens, or passwords.

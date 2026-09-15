@@ -10,7 +10,8 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -22,10 +23,14 @@ jobs:
         run: ./test.sh
       - name: Verify package source
         run: ./verify.sh
-      - name: Install pinned engine in portable mode
+      - name: Install application in portable mode
         run: ./install.sh --portable
-      - name: Run real engine acceptance
+      - name: Run execution acceptance
         run: python3 -B scripts/engine_smoke.py
+      - name: Run session and completion checks
+        run: |
+          python3 -B scripts/agent_smoke.py --engine "$PWD/runtime/node_modules/.bin/codex"
+          python3 -B scripts/completion_smoke.py --engine "$PWD/runtime/node_modules/.bin/codex"
       - name: Build release
         run: ./scripts/build-release.sh
       - name: Verify checksum
@@ -44,4 +49,13 @@ jobs:
             "dist/jv-cli-$version-linux-x86_64.zip"
             "dist/jv-cli-$version-linux-x86_64.zip.sha256"
           )
-          gh release create "$GITHUB_REF_NAME" "${assets[@]}" --verify-tag --generate-notes --title "JV CLI $version"
+          gh release create "$GITHUB_REF_NAME" "${assets[@]}" --verify-tag --latest \
+            --title "JV CLI $version" --notes-file "docs/releases/$version.md"
+      - name: Refresh earlier customer release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for version in 0.4.3 0.4.4; do
+            gh release edit "v$version" --title "JV CLI $version" \
+              --notes-file "docs/releases/$version.md"
+          done
