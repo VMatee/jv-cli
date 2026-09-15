@@ -1,0 +1,88 @@
+name: JV CLI 0.4.4 release recovery
+
+on:
+  push:
+    branches: [ci/release-0.4.4-recovery]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: jvcli-release-v0.4.4
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v0.4.4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify immutable release source
+        run: |
+          test "$(git rev-parse HEAD)" = 3aeea1f222cf7cf7eac52c50aa3114139e336559
+          test "$(cat VERSION)" = 0.4.4
+      - name: Run complete tests
+        run: ./test.sh
+      - name: Verify package source
+        run: ./verify.sh
+      - name: Install pinned engine in portable mode
+        run: ./install.sh --portable
+      - name: Run real engine acceptance with diagnostics
+        run: |
+          python3 - <<'PY'
+          import json
+          import subprocess
+          import sys
+          result = subprocess.run([sys.executable, '-B', 'scripts/engine_smoke.py'], capture_output=True, text=True)
+          print(result.stdout)
+          print(result.stderr, file=sys.stderr)
+          if result.returncode:
+              try:
+                  report = json.loads(result.stdout)
+                  message = report.get('error', 'Engine acceptance failed without an error field')
+              except ValueError:
+                  message = (result.stderr or result.stdout)[-6000:]
+              message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print('::error title=Engine acceptance::' + message)
+          sys.exit(result.returncode)
+          PY
+      - name: Run agent and completion acceptance
+        run: |
+          python3 -B scripts/agent_smoke.py --engine "$PWD/runtime/node_modules/.bin/codex"
+          python3 -B scripts/completion_smoke.py --engine "$PWD/runtime/node_modules/.bin/codex"
+      - name: Build and verify release
+        run: |
+          ./scripts/build-release.sh
+          (cd dist && sha256sum -c jv-cli-0.4.4-linux-x86_64.zip.sha256)
+          echo '2911353a3e58e3ea7ec5d7b7abbb0d2c091c4ccebde1ff6004413aa91e4da1b5  dist/jv-cli-0.4.4-linux-x86_64.zip' | sha256sum -c -
+          directory=$(mktemp -d)
+          unzip -q dist/jv-cli-0.4.4-linux-x86_64.zip -d "$directory"
+          "$directory/jv-cli/verify.sh"
+      - name: Publish verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > "$RUNNER_TEMP/release-notes.md" <<'EOF'
+          ## JV CLI 0.4.4
+
+          - Completion review requires reinspection or regeneration of artifacts potentially affected by failed or interrupted workspace-mutating tools.
+          - File existence or nonzero size alone is insufficient verification.
+          - Includes completion regression coverage and clearer legacy-session guidance.
+          - Embedded engine remains pinned to 0.149.1.
+
+          Built from authoritative local source commit `3aeea1f222cf7cf7eac52c50aa3114139e336559`. Automated tests, real-engine scripted checks, package integrity and extracted-package verification passed. The ZIP matches the independently validated local build.
+
+          Production Scenario 01 re-acceptance remains a separate deployment gate. Offline/scripted checks do not certify live provider behavior.
+
+          ZIP SHA-256: `2911353a3e58e3ea7ec5d7b7abbb0d2c091c4ccebde1ff6004413aa91e4da1b5`
+          EOF
+          gh release create v0.4.4 \
+            dist/jv-cli-0.4.4-linux-x86_64.zip \
+            dist/jv-cli-0.4.4-linux-x86_64.zip.sha256 \
+            --verify-tag --latest --title 'JV CLI 0.4.4' \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
