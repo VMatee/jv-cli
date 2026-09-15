@@ -252,6 +252,60 @@ class AgentTests(unittest.TestCase):
             self.assertEqual(len(client.posts), 3)
 
 
+    def test_completion_review_instructions_require_artifact_reverification(self):
+        def script(body, n):
+            if n == 1:
+                return tool(
+                    '{"command":"printf partial > artifact.txt; false"}'
+                )
+            if n == 2:
+                return msg("Artifact appears to exist.")
+            if n == 3:
+                ctx = context(body)
+                self.assertTrue(ctx["completion_review"])
+
+                instructions = body["instructions"]
+                self.assertIn(
+                    "can leave partial side effects",
+                    instructions,
+                )
+                self.assertIn(
+                    "File existence or nonzero size alone is not sufficient",
+                    instructions,
+                )
+
+                return tool('{"command":"cat artifact.txt"}')
+
+            return msg(json.dumps(commitment(body)))
+
+        with tempfile.TemporaryDirectory() as td:
+            client, runtime = self.runtime(td, script)
+            request = core_request()
+
+            failed_call = runtime.process_request(request)[0]
+            self.assertEqual(failed_call["name"], "shell_command")
+
+            self.result(
+                request,
+                failed_call,
+                "Exit code: 1\nOutput:\n",
+            )
+
+            verify_call = runtime.process_request(request)[0]
+            self.assertEqual(verify_call["name"], "shell_command")
+
+            self.result(request, verify_call, "partial")
+
+            self.assertEqual(
+                runtime.process_request(request)[0]["content"][0]["text"],
+                "DONE",
+            )
+            self.assertEqual(
+                runtime.processor.last_completion,
+                "committed",
+            )
+
+
 class RecoveryAndSafetyTests(unittest.TestCase):
     runtime = AgentTests.runtime
     result = AgentTests.result

@@ -1,8 +1,8 @@
 # Acceptance before user rollout
 
-## 0.4.3 release gates
+## 0.4.4 release gates
 
-Use the focused agent/paired Central tests and real `scripts/agent_smoke.py` and `scripts/completion_smoke.py` in addition to all existing suites. A successful exit requires the completion commitment in structured agentic tasks; fixture truth and produced artifacts must still be inspected separately. Offline tests alone do not imply production acceptance. The canonical 0.4.3 candidate additionally passed Scenario 01 production acceptance on 2026-09-12; future deployment classes must repeat the relevant gates. See [AGENT_COMPLETION.md](AGENT_COMPLETION.md) and [TEST_REPORT.md](TEST_REPORT.md).
+Use the focused agent/paired Central tests and real `scripts/agent_smoke.py` and `scripts/completion_smoke.py` in addition to all existing suites. A successful exit requires the completion commitment in structured agentic tasks; fixture truth and produced artifacts must still be inspected separately. Offline tests alone do not imply production acceptance. The canonical 0.4.3 release passed Scenario 01 production acceptance on 2026-09-12. The 0.4.4 patch must repeat Scenario 01 and final artifact inspection before production acceptance. See [AGENT_COMPLETION.md](AGENT_COMPLETION.md) and [TEST_REPORT.md](TEST_REPORT.md).
 
 
 Do not interpret passing tests as a guarantee about every real model, Ubuntu kernel, or production deployment. Record the target checks below for each deployment class.
@@ -19,7 +19,7 @@ $HOME/.local/bin/jvcli doctor --json
 ./test.sh
 ```
 
-Expected package version: `0.4.3`. Expected engine: `0.149.1`. `doctor` checks local configuration/version/help, not live authentication or tool execution. `test.sh` uses only loopback mock services and fake engine scripts, not real credentials.
+Expected package version: `0.4.4`. Expected engine: `0.149.1`. `doctor` checks local configuration/version/help, not live authentication or tool execution. `test.sh` uses only loopback mock services and fake engine scripts, not real credentials.
 
 The installer must not require sudo or create a global executable. It creates only the per-user application and launcher paths. It reports a missing `~/.local/bin` PATH entry and changes `~/.bashrc` only with explicit `--add-path`.
 

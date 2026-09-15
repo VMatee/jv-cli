@@ -4,11 +4,11 @@ JV CLI is an AI coding-agent CLI that connects to JV LLM while running developme
 
 Command: `jvcli`
 
-Current source version: **0.4.3** (canonical value: [VERSION](VERSION)). The engine is pinned to `@openai/codex@0.149.1`.
+Current source version: **0.4.4** (canonical value: [VERSION](VERSION)). The engine is pinned to `@openai/codex@0.149.1`.
 
 The current source also contains an opt-in pilot for JV's structured Responses API. Legacy `/v1/jobs` coding remains the default during the controlled rollout. Workspace protections remain enabled; there is no YOLO mode, automatic sudo elevation, or passwordless-sudo setup. A source version on `main` is not a published GitHub Release.
 
-The canonical 0.4.3 source implements [durable evidence and bounded agent completion](docs/AGENT_COMPLETION.md). Completion can atomically reconcile stale progress plans using an explicit model-authored commitment. Scenario 01 received production acceptance on 2026-09-12; GitHub publication remains a separate release gate. The embedded engine remains exactly 0.149.1.
+The current 0.4.4 source retains the canonical 0.4.3 [durable evidence and bounded agent completion](docs/AGENT_COMPLETION.md) architecture and adds completion artifact re-verification hardening. Scenario 01 production acceptance on 2026-09-12 applies to 0.4.3; 0.4.4 must repeat the relevant acceptance gate before production rollout. GitHub publication remains a separate release gate. The embedded engine remains exactly 0.149.1.
 
 Structured mode now supports initial workspace PNG/JPEG/WebP images via `exec/resume --image PATH`, plus local `shell_command`, `update_plan`, `view_image` image results and exact custom/freeform `apply_patch`. These follow accepted contract `52be898`; current production certification is recorded in the audit. See [the pinned-engine compatibility audit](docs/CODEX_PARITY.md). Legacy direct attachments remain available through `jvcli ask --file screenshot.png "Analyze this screenshot"`.
 

@@ -338,7 +338,7 @@ class PlanCompletionTests(unittest.TestCase):
             )
             path.write_text(json.dumps(saved))
             before = path.read_bytes()
-            with self.assertRaisesRegex(ProtocolError, "fresh 0.4.3"):
+            with self.assertRaisesRegex(ProtocolError, "fresh .*current JV CLI version"):
                 AgentProcessor(client, Path(td))
             self.assertEqual(path.read_bytes(), before)
 

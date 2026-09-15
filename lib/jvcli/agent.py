@@ -110,6 +110,13 @@ or not_required must explain why the original user request is still satisfied;
 they cannot dismiss genuinely unfinished requirements. If work remains, keep it
 in unresolved and continue with tools. Do not claim completion with unverified
 promised files. An ordinary final message does not commit completion.
+Workspace-mutating tool calls can leave partial side effects even when the tool
+reports failure or interruption. After such a failure, inspect or regenerate
+every artifact that call could have touched before committing completion. A
+later successful command does not by itself prove earlier artifacts are valid.
+File existence or nonzero size alone is not sufficient artifact verification;
+check final artifact content against the original request after the last
+possibly-mutating failure.
 Do not put this commitment inside a code fence. It is the text of your protocol
 message, not a replacement for the outer provider response envelope.
 """
@@ -127,7 +134,7 @@ class AgentState(DurableResponseState):
                 raise ProtocolError("JV-AGENT-INTEGRITY: task journal changed")
         elif self.rounds or "agent" in self.value:
             raise ProtocolError(
-                "JV-AGENT-LEGACY-STATE: preserve the old session; start a fresh 0.4.3 task"
+                "JV-AGENT-LEGACY-STATE: preserve the old session; start a fresh task with the current JV CLI version"
             )
         self.value.setdefault(
             "agent",
@@ -141,7 +148,7 @@ class AgentState(DurableResponseState):
         )
         if self.value["agent"].get("version") != 2:
             raise ProtocolError(
-                "JV-AGENT-LEGACY-STATE: preserve this journal; start a fresh 0.4.3 session"
+                "JV-AGENT-LEGACY-STATE: preserve this journal; start a fresh session with the current JV CLI version"
             )
 
     def prepare(self, *args, **kwargs):

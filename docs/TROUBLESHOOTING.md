@@ -20,7 +20,7 @@ From the actual installed folder run `./install.sh`. Node 18+, npm and Python 3.
 
 ## Resume rejects --color
 
-That regression is covered: the launcher only passes `--color never` on the initial exec. Run `jvcli --version` and verify 0.4.3. Check for a stale PATH or an older extracted folder. Old 0.2.x histories are not automatically migrated.
+That regression is covered: the launcher only passes `--color never` on the initial exec. Run `jvcli --version` and verify 0.4.4. Check for a stale PATH or an older extracted folder. Old 0.2.x histories are not automatically migrated.
 
 ## Legacy mode: raw tool JSON printed / malformed tool response
 

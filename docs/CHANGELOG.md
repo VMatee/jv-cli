@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.4 — completion artifact re-verification hardening
+
+- Completion review now explicitly treats failed or interrupted
+  workspace-mutating tool calls as potentially leaving partial side effects.
+- Before committing completion, artifacts potentially affected by such a call
+  must be re-inspected or regenerated; existence or nonzero size alone is not
+  sufficient verification.
+- Added a regression covering partial artifact mutation followed by explicit
+  completion-review reinspection.
+- Stock Codex remains pinned to 0.149.1 and the completion-v2 journal/protocol
+  architecture remains unchanged from 0.4.3.
+- This is model-instruction completion hardening, not deterministic typed shell
+  exit-status enforcement in the completion context.
+- Scenario 01 production re-acceptance for 0.4.4 remains a release/deployment
+  gate and is not implied by offline tests or smoke checks.
+
 ## 0.4.3 — completion liveness (canonical release candidate)
 
 - Strict `jv-task-completion-v2` commitments explicitly reconcile every open plan
