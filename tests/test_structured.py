@@ -240,7 +240,7 @@ class StructuredProcessorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             failed = response('failed', error={'code': 'provider_failed', 'message': 'safe failure'})
             runtime, _, _ = self.make_runtime(td, [failed])
-            with self.assertRaisesRegex(JvError, 'provider_failed'):
+            with self.assertRaisesRegex(JvError, 'Remote inference failed'):
                 runtime.process_request(local_request())
         with tempfile.TemporaryDirectory() as td:
             bad = response('queued', output=[message()])

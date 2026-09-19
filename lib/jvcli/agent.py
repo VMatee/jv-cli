@@ -13,7 +13,7 @@ import json
 import secrets
 from pathlib import Path
 
-from .safety import JvError, ProtocolError, strict_json
+from .safety import JvError, ProtocolError, UncertainToolSideEffect, strict_json
 from .structured import (
     CALL_TYPES,
     STRUCTURED_AGENT_INSTRUCTIONS,
@@ -641,7 +641,7 @@ class AgentProcessor(StructuredProcessor):
                 t for t in agent["tasks"] if t["task_id"] == interaction["task_id"]
             )
             if interaction["status"] == "published":
-                raise ProtocolError(
+                raise UncertainToolSideEffect(
                     "Refusing to publish the same structured tool call twice; reconcile its local side effect"
                 )
             if interaction["status"] == "failed":
@@ -742,7 +742,10 @@ class AgentProcessor(StructuredProcessor):
                 and not isinstance(exc, SubmissionUncertain)
                 and not runtime.cancel.is_set()
             ):
-                interaction.update(status="failed", error=str(exc))
+                interaction.update(
+                    status="failed", error=str(exc),
+                    failure_code=getattr(exc, "failure_code", "agent_execution_failed"),
+                )
                 self.state._write()
             raise
         finally:

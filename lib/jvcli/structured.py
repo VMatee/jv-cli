@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Any
 
 from .safety import (JvError, ProtocolError, SubmissionUncertain, atomic_write,
-                     private_dir, read_private_json, strict_json)
+                     private_dir, read_private_json, strict_json,
+                     RemoteInferenceError, UncertainToolSideEffect)
 from .images import validate_image_history, validate_image_request, validate_image_results
 
 STRUCTURED_AGENT_INSTRUCTIONS = '''You are JV CLI, a software-engineering agent in the user's selected workspace.
@@ -412,7 +413,7 @@ class StructuredProcessor:
         unresolved = [index for index, item in enumerate(self.state.rounds)
                       if item['phase'] == 'published']
         if unresolved and candidate is None:
-            raise ProtocolError(
+            raise UncertainToolSideEffect(
                 'A published structured tool call is unresolved; refusing duplicate execution. '
                 'Reconcile the prior local side effect before resuming')
         if candidate is not None and candidate[0] != unresolved[-1]:
@@ -443,13 +444,25 @@ class StructuredProcessor:
 
     @staticmethod
     def _failed(payload: dict) -> JvError:
+        # Remote messages are untrusted. Persist/display constants only, and do
+        # not infer retry safety from an empty output or a generic failed status.
         error = payload.get('error')
-        if isinstance(error, dict):
-            code, message = error.get('code'), error.get('message')
-            if (isinstance(code, str) and isinstance(message, str)
-                    and len(code) <= 100 and len(message) <= 2000):
-                return JvError(f'JV structured response failed ({code}): {message}')
-        return JvError('JV structured response failed without a valid public error')
+        code = error.get('code') if isinstance(error, dict) else None
+        failures = {
+            'JV-AGENT-PROVIDER-CLEANUP-001': (
+                'provider_cleanup_failed',
+                'Provider cleanup failed after inference; no action was published. '
+                'Automatic retry is disabled; inspect the existing job.'),
+            'JV-AGENT-OUTPUT-001': (
+                'remote_output_validation_failed',
+                'Remote output validation failed; no action was published. '
+                'Automatic retry is disabled.'),
+        }
+        failure, message = failures.get(code if isinstance(code, str) else None, (
+            'agent_inference_failed',
+            'Remote inference failed; submission safety is not established. '
+            'Automatic retry is disabled; inspect the existing job.'))
+        return RemoteInferenceError(failure, message)
 
     @staticmethod
     def _validate_envelope(payload: Any, expected_id: str | None = None) -> None:
@@ -558,7 +571,7 @@ class StructuredProcessor:
                 runtime.status = 'structured model response received'
                 return [round_item['output']]
             if round_item['phase'] in {'published', 'continued'}:
-                raise ProtocolError(
+                raise UncertainToolSideEffect(
                     'Refusing to publish the same structured tool call twice; '
                     'reconcile whether its local side effect ran')
             if round_item['phase'] in {'failed', 'rejected'}:
@@ -628,7 +641,8 @@ class StructuredProcessor:
             raise JvError('Turn cancelled; the remote structured response may have completed')
         if terminal['status'] == 'failed':
             error = self._failed(terminal)
-            self.state.update(index, phase='failed', remote_status='failed', error=str(error))
+            self.state.update(index, phase='failed', remote_status='failed', error=str(error),
+                              failure_code=error.failure_code)
             raise error
         try:
             output = self._completed_item(

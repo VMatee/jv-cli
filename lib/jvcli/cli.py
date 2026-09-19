@@ -130,16 +130,29 @@ def _password():
     return value
 
 
+def _optional_timeout_from_env(name, default="0"):
+    value = os.environ.get(name, default).strip().lower()
+    if value in {"0", "none", "off", "infinite"}:
+        return None
+    return positive_number(value, name)
+
+
+def _wait_timeout_from_env():
+    return _optional_timeout_from_env("JVCLI_WAIT_TIMEOUT")
+
+
+def _turn_timeout_from_env():
+    return _optional_timeout_from_env("JVCLI_TURN_TIMEOUT")
+
+
 def _new_client(base):
     return JvApiClient(
         JvClientConfig(
             base_url=base,
             poll_interval=positive_number(
-                os.environ.get("JVCLI_POLL_INTERVAL", "2"), "JVCLI_POLL_INTERVAL"
+                os.environ.get("JVCLI_POLL_INTERVAL", "30"), "JVCLI_POLL_INTERVAL"
             ),
-            wait_timeout=positive_number(
-                os.environ.get("JVCLI_WAIT_TIMEOUT", "300"), "JVCLI_WAIT_TIMEOUT"
-            ),
+            wait_timeout=_wait_timeout_from_env(),
             request_timeout=positive_number(
                 os.environ.get("JVCLI_REQUEST_TIMEOUT", "30"), "JVCLI_REQUEST_TIMEOUT"
             ),
@@ -296,19 +309,13 @@ def _model_catalog(structured=False):
 def _write_engine_config(
     session_dir, port, read_only=False, allow_network=False, structured=False
 ):
-    # SSE comments do not reset the pinned engine's event-idle deadline.
-    # Leave room for the initial job plus two bounded correction jobs, their
-    # submissions, and delivery of the final response/error. Job/turn deadlines
-    # remain authoritative; increasing this does not extend an individual job.
-    wait_seconds = positive_number(
-        os.environ.get("JVCLI_WAIT_TIMEOUT", "300"), "JVCLI_WAIT_TIMEOUT"
-    )
+    # The local adapter emits real SSE progress events while remote inference is
+    # still in progress, so this is only an inactivity/network guard, not an
+    # overall model-response deadline.
     request_seconds = positive_number(
         os.environ.get("JVCLI_REQUEST_TIMEOUT", "30"), "JVCLI_REQUEST_TIMEOUT"
     )
-    stream_idle_ms = int(
-        ((MAX_RESPONSE_REPAIRS + 1) * (wait_seconds + request_seconds) + 30) * 1000
-    )
+    stream_idle_ms = int(max(120.0, request_seconds * 4) * 1000)
     engine_home = private_dir(session_dir / "engine")
     tool_home = private_dir(session_dir / "tool-home")
     tmp = private_dir(session_dir / "tmp")
@@ -567,7 +574,7 @@ def _run_engine(
     overrides=(),
     runtime=None,
     json_mode=False,
-    turn_timeout=3600,
+    turn_timeout=None,
     verbose=False,
     images=(),
 ):
@@ -664,7 +671,7 @@ def _run_engine(
                         say(redact(runtime.notices.get_nowait(), secrets))
                     except queue.Empty:
                         break
-            if time.monotonic() - started >= turn_timeout:
+            if turn_timeout is not None and time.monotonic() - started >= turn_timeout:
                 if runtime:
                     runtime.cancel.set()
                 say(
@@ -908,9 +915,7 @@ def _run_session(
                 os.environ.get("JVCLI_MAX_REQUESTS", "40"), "JVCLI_MAX_REQUESTS", 500
             )
         )
-        turn_timeout = positive_number(
-            os.environ.get("JVCLI_TURN_TIMEOUT", "3600"), "JVCLI_TURN_TIMEOUT"
-        )
+        turn_timeout = _turn_timeout_from_env()
         from .images import snapshot_images
 
         image_snapshots = snapshot_images(

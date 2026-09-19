@@ -18,6 +18,19 @@ from jvcli.safety import JvError
 
 
 class CliHardening(unittest.TestCase):
+    def test_operator_resume_options_before_session_and_single_prompt(self):
+        # Historical operator shape: resume SESSION --json --allow-network PROMPT.
+        # It failed with argparse exit 2 in production. Do not require rejection
+        # forever; the operator contract is the accepted canonical ordering.
+        args = cli._parser().parse_args(
+            ["resume", "--json", "--allow-network", "test-session", "Resume Turn 2"]
+        )
+        self.assertEqual(args.command, "resume")
+        self.assertEqual(args.session_id, "test-session")
+        self.assertTrue(args.json)
+        self.assertTrue(args.allow_network)
+        self.assertEqual(args.prompt, ["Resume Turn 2"])
+
     def test_structured_transport_is_explicitly_opt_in(self):
         with patch.dict(os.environ, {}, clear=True):
             self.assertFalse(cli._structured_enabled())
@@ -53,29 +66,39 @@ class CliHardening(unittest.TestCase):
                 cli._run_session('inspect', read_only=True, allow_network=True)
             engine.assert_not_called()
 
-    def test_default_job_timeout_is_five_minutes(self):
+    def test_default_job_wait_is_unbounded_with_thirty_second_polling(self):
         from jvcli.transport import JvClientConfig
-        self.assertEqual(JvClientConfig().wait_timeout, 300)
+        self.assertIsNone(JvClientConfig().wait_timeout)
+        self.assertEqual(JvClientConfig().poll_interval, 30)
         with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {}, clear=True), patch.object(cli, 'STATE_DIR', Path(td)):
-            self.assertEqual(cli._new_client('http://127.0.0.1').config.wait_timeout, 300)
+            client = cli._new_client('http://127.0.0.1')
+            self.assertIsNone(client.config.wait_timeout)
+            self.assertEqual(client.config.poll_interval, 30)
 
-    def test_job_timeout_and_stream_deadline_are_configurable(self):
+    def test_job_wait_timeout_can_still_be_bounded_explicitly(self):
         for wait, request in [('300', '30'), ('600', '15')]:
             with tempfile.TemporaryDirectory() as td, patch.dict(os.environ,
                     {'JVCLI_WAIT_TIMEOUT': wait, 'JVCLI_REQUEST_TIMEOUT': request}, clear=True), patch.object(cli, 'STATE_DIR', Path(td)):
                 self.assertEqual(cli._new_client('http://127.0.0.1').config.wait_timeout, float(wait))
                 cli._write_engine_config(Path(td) / 'session', 12345)
                 config = (Path(td) / 'session/engine/config.toml').read_text()
-                expected = int((3 * (float(wait) + float(request)) + 30) * 1000)
+                expected = int(max(120.0, float(request) * 4) * 1000)
                 self.assertIn('"stream_idle_timeout_ms" = ' + str(expected), config)
                 self.assertIn('"stream_max_retries" = 0', config)
 
-    def test_invalid_job_timeout_rejected_before_config_generation(self):
-        for value in ('0', '-1', 'nan', 'inf', 'invalid'):
+    def test_zero_or_named_unbounded_wait_is_accepted(self):
+        for value in ('0', 'none', 'off', 'infinite'):
             with tempfile.TemporaryDirectory() as td, patch.dict(os.environ,
-                    {'JVCLI_WAIT_TIMEOUT': value}, clear=True):
+                    {'JVCLI_WAIT_TIMEOUT': value}, clear=True), patch.object(cli, 'STATE_DIR', Path(td)):
+                self.assertIsNone(cli._new_client('http://127.0.0.1').config.wait_timeout)
+                cli._write_engine_config(Path(td) / 'session', 12345)
+
+    def test_invalid_job_timeout_rejected(self):
+        for value in ('-1', 'nan', 'inf', 'invalid'):
+            with tempfile.TemporaryDirectory() as td, patch.dict(os.environ,
+                    {'JVCLI_WAIT_TIMEOUT': value}, clear=True), patch.object(cli, 'STATE_DIR', Path(td)):
                 with self.assertRaises(JvError):
-                    cli._write_engine_config(Path(td), 12345)
+                    cli._new_client('http://127.0.0.1')
 
     def engine(self,td,body):
         file=Path(td)/'engine'

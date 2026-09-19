@@ -115,15 +115,17 @@ def _parse_retry_after(value: str | None) -> float:
 class JvClientConfig:
     base_url: str = DEFAULT_BASE_URL
     request_timeout: float = 30.0
-    poll_interval: float = 2.0
-    wait_timeout: float = 300.0
+    poll_interval: float = 30.0
+    wait_timeout: float | None = None
     max_poll_errors: int = 8
     temp_dir: Path | None = None
 
     def __post_init__(self):
         self.base_url = validate_base_url(self.base_url)
-        for key in ("request_timeout", "poll_interval", "wait_timeout"):
+        for key in ("request_timeout", "poll_interval"):
             setattr(self, key, positive_number(getattr(self, key), key))
+        if self.wait_timeout is not None:
+            self.wait_timeout = positive_number(self.wait_timeout, "wait_timeout")
         if isinstance(self.max_poll_errors, bool) or not isinstance(self.max_poll_errors, int) or not 1 <= self.max_poll_errors <= 20:
             raise JvError("max_poll_errors must be between 1 and 20")
 
@@ -399,19 +401,21 @@ class JvApiClient:
     def wait_for_response(self, response_id: str, *, cancel: threading.Event | None = None,
                           progress: Callable[[dict], None] | None = None) -> dict:
         cancel = cancel if cancel is not None else threading.Event()
-        deadline = time.monotonic() + self.config.wait_timeout
+        deadline = (None if self.config.wait_timeout is None
+                    else time.monotonic() + self.config.wait_timeout)
         errors = 0
         while True:
             if cancel.is_set():
                 raise Cancelled(
                     f"Stopped waiting for {response_id}; the remote response is not cancelled")
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
+            remaining = None if deadline is None else deadline - time.monotonic()
+            if remaining is not None and remaining <= 0:
                 raise JvError(
                     f"Timed out waiting for {response_id}; the remote response is not cancelled")
             try:
-                payload = self.get_response(
-                    response_id, timeout=min(remaining, self.config.request_timeout))
+                timeout = (self.config.request_timeout if remaining is None
+                           else min(remaining, self.config.request_timeout))
+                payload = self.get_response(response_id, timeout=timeout)
                 errors = 0
                 if progress:
                     progress(payload)
@@ -424,7 +428,8 @@ class JvApiClient:
                     raise
                 delay = max(min(30.0, self.config.poll_interval * 2 ** min(errors - 1, 5)),
                             getattr(exc, "retry_after", 0.0))
-            cancel.wait(min(delay, max(0, deadline - time.monotonic())))
+            sleep_for = delay if deadline is None else min(delay, max(0, deadline - time.monotonic()))
+            cancel.wait(sleep_for)
 
     def get_job(self, job_id: str, timeout=None) -> dict:
         if not _validate_id(job_id):
@@ -447,16 +452,19 @@ class JvApiClient:
     def wait_for_job(self, job_id: str, *, cancel: threading.Event | None = None,
                      progress: Callable[[dict], None] | None = None, conversation_id=None) -> dict:
         cancel = cancel if cancel is not None else threading.Event()
-        deadline = time.monotonic() + self.config.wait_timeout
+        deadline = (None if self.config.wait_timeout is None
+                    else time.monotonic() + self.config.wait_timeout)
         errors = 0
         while True:
             if cancel.is_set():
                 raise Cancelled(f"Stopped waiting for {job_id}; the remote job is not cancelled")
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
+            remaining = None if deadline is None else deadline - time.monotonic()
+            if remaining is not None and remaining <= 0:
                 raise JvError(f"Timed out waiting for {job_id}; the remote job is not cancelled. Use jvcli job {job_id}")
             try:
-                job = self.get_job(job_id, timeout=min(remaining, self.config.request_timeout))
+                timeout = (self.config.request_timeout if remaining is None
+                           else min(remaining, self.config.request_timeout))
+                job = self.get_job(job_id, timeout=timeout)
                 if conversation_id is not None and job["conversation_id"] != conversation_id:
                     raise JvError("JV API changed the conversation ID")
                 conversation_id = job["conversation_id"]
@@ -471,7 +479,8 @@ class JvApiClient:
                 if not getattr(exc, "retryable", False) or errors >= self.config.max_poll_errors:
                     raise
                 delay = max(min(30.0, self.config.poll_interval * 2 ** min(errors - 1, 5)), getattr(exc, "retry_after", 0.0))
-            cancel.wait(min(delay, max(0, deadline - time.monotonic())))
+            sleep_for = delay if deadline is None else min(delay, max(0, deadline - time.monotonic()))
+            cancel.wait(sleep_for)
 
     def download_response_files(self, job: dict, destination: Path) -> list[Path]:
         self._validate_job(job)

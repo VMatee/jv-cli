@@ -2,7 +2,7 @@
 
 An AI coding assistant for your terminal. Ask questions about a project, make changes, run checks, and return to saved work.
 
-**Current version: 0.4.5** · [Download](https://github.com/VMatee/jv-cli/releases/latest) · [What's new](docs/CHANGELOG.md)
+**Current version: 0.4.6** · [Download](https://github.com/VMatee/jv-cli/releases/latest) · [What's new](docs/CHANGELOG.md)
 
 ## Get started
 
@@ -30,8 +30,8 @@ The installer downloads the latest release and verifies its checksum. Installati
 Prefer a manual download? Get the ZIP and matching `.sha256` file from [Releases](https://github.com/VMatee/jv-cli/releases/latest), then:
 
 ```bash
-sha256sum -c jv-cli-0.4.5-linux-x86_64.zip.sha256
-unzip jv-cli-0.4.5-linux-x86_64.zip
+sha256sum -c jv-cli-0.4.6-linux-x86_64.zip.sha256
+unzip jv-cli-0.4.6-linux-x86_64.zip
 cd jv-cli
 ./verify.sh
 ./install.sh

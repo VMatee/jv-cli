@@ -20,7 +20,21 @@ class ProtocolError(JvError):
 
 
 class SubmissionUncertain(JvError):
-    pass
+    failure_code = "remote_submission_uncertain"
+
+
+class UncertainToolSideEffect(ProtocolError):
+    """A published action lacks a reconciled result; never publish it again."""
+
+    failure_code = "uncertain_tool_side_effect"
+
+
+class RemoteInferenceError(JvError):
+    """Terminal remote failure, with an allowlisted local classification."""
+
+    def __init__(self, failure_code: str, message: str):
+        self.failure_code = failure_code
+        super().__init__(message)
 
 
 class Cancelled(JvError):

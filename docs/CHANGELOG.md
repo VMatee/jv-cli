@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.6 — clearer execution failures
+
+- Distinguish remote output rejection and provider cleanup failures from project tool errors.
+- Keep failed remote responses stopped without automatic resubmission; preserve completed tool results and saved sessions for diagnosis.
+- Display fixed error descriptions instead of remote error text.
+
 ## 0.4.5 — clearer setup and usage guides
 
 - Reorganized installation, account setup, everyday commands, updates, and troubleshooting into shorter user guides.

@@ -158,6 +158,15 @@ class TransportHardening(unittest.TestCase):
         self.client.config.wait_timeout=.06
         with self.assertRaises(JvError):self.client.wait_for_job('job_1')
         self.assertEqual(self.server.polls,1)
+    def test_unbounded_poll_waits_until_terminal_status(self):
+        self.server.mode='get_running'
+        self.client.config.wait_timeout=None
+        self.client.config.poll_interval=.01
+        threading.Timer(.04, lambda: setattr(self.server, 'mode', 'ok')).start()
+        job=self.client.wait_for_job('job_1')
+        self.assertEqual(job['status'],'succeeded')
+        self.assertGreaterEqual(self.server.polls,2)
+
     def test_poll_wait_timeout(self):
         self.server.mode='get_running';self.client.config.wait_timeout=.035
         with self.assertRaises(JvError) as cm:self.client.wait_for_job('job_1')
@@ -299,7 +308,7 @@ class AdapterHardening(unittest.TestCase):
     def test_stream_heartbeat_while_polling(self):
         self.server.mode='get_running';self.client.config.wait_timeout=.09
         with urllib.request.urlopen(self.request()) as response:text=response.read().decode()
-        self.assertIn(': jv-keepalive',text)
+        self.assertIn('response.in_progress',text)
         self.assertIn('response.failed',text)
         self.assertNotIn('response.completed',text)
     def test_stream_error_explicit_not_false_success(self):

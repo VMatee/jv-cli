@@ -342,8 +342,15 @@ class ResponsesAdapterHandler(BaseHTTPRequestHandler):
                 while not completed.wait(self.runtime.heartbeat):
                     if self.runtime.cancel.is_set():
                         raise Cancelled('Local turn cancelled; submitted remote jobs may continue')
-                    self.wfile.write(b': jv-keepalive\n\n')
-                    self.wfile.flush()
+                    self._event({
+                        'type': 'response.in_progress',
+                        'response': {
+                            'id': response_id,
+                            'object': 'response',
+                            'status': 'in_progress',
+                            'output': [],
+                        },
+                    })
                 if 'error' in result:
                     raise result['error']
                 items = result['items']
