@@ -201,7 +201,7 @@ class CliEndToEndTests(unittest.TestCase):
                                'JVCLI_CODEX_BIN': str(fake), 'JVCLI_HOME': str(root / 'state')}
                         master, slave = pty.openpty()
                         try:
-                            os.write(master, b'/permission\n/permissions\n/status\n/help\n/exit\n')
+                            os.write(master, b'/permission\n/permissions\n/status\n/sttaus\n/help\n/exit\n')
                             result = subprocess.run(
                                 [sys.executable, '-B', str(ROOT / 'bin/jvcli'), *flags],
                                 stdin=slave, cwd=workspace, env=env,
@@ -215,10 +215,11 @@ class CliEndToEndTests(unittest.TestCase):
                         self.assertIn(f'Tool network: {network}', result.stderr)
                         self.assertIn('/permissions (or /permission)', result.stderr)
                         self.assertIn('Last JV job: none', result.stderr)
-                        self.assertNotIn('Unknown command', result.stderr)
+                        self.assertIn('ลอง /status', result.stderr)
                         self.assertNotIn('e2e-token', result.stderr + result.stdout)
                         self.assertEqual(Handler.job_count, 0)
                         self.assertTrue(Handler.saw_logout)
+                        self.assertEqual(json.loads((root / 'state/config.json').read_text())['username'], 'user')
                         self.assertEqual(list(workspace.iterdir()), [])
                         config = next((root / 'state/runs').glob('*/engine/config.toml')).read_text()
                         self.assertIn('"network_access" = ' + ('true' if network == 'enabled' else 'false'), config)
@@ -228,6 +229,42 @@ class CliEndToEndTests(unittest.TestCase):
                     server.shutdown()
                     server.server_close()
                     thread.join(timeout=1)
+
+    def test_interactive_logout_forgets_account_without_submitting_a_job(self):
+        class Handler(E2EJvHandler):
+            job_count, jobs, submitted, saw_logout = 0, {}, [], False
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                workspace = root / 'workspace'
+                workspace.mkdir()
+                fake = root / 'engine'
+                fake.write_text(FAKE_ENGINE)
+                fake.chmod(0o755)
+                env = {**os.environ, 'JV_API_BASE_URL': f'http://127.0.0.1:{server.server_address[1]}',
+                       'JV_API_USERNAME': 'user', 'JV_API_PASSWORD': 'pass',
+                       'JVCLI_CODEX_BIN': str(fake), 'JVCLI_HOME': str(root / 'state')}
+                master, slave = pty.openpty()
+                try:
+                    os.write(master, b'/logout\n')
+                    result = subprocess.run(
+                        [sys.executable, '-B', str(ROOT / 'bin/jvcli')],
+                        stdin=slave, cwd=workspace, env=env,
+                        capture_output=True, text=True, timeout=15)
+                finally:
+                    os.close(master)
+                    os.close(slave)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads((root / 'state/config.json').read_text()), {})
+                self.assertEqual(Handler.job_count, 0)
+                self.assertTrue(Handler.saw_logout)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=1)
 
     def recovery_case(self, answers, *, success):
         class Handler(E2EJvHandler):

@@ -2,7 +2,7 @@
 
 An AI coding assistant for your terminal. Ask questions about a project, make changes, run checks, and return to saved work.
 
-**Current version: 0.4.6** · [Download](https://github.com/VMatee/jv-cli/releases/latest) · [What's new](docs/CHANGELOG.md)
+**Source version: 0.4.7** · [Published releases](https://github.com/VMatee/jv-cli/releases/latest) · [What's new](docs/CHANGELOG.md)
 
 ## Get started
 
@@ -30,8 +30,8 @@ The installer downloads the latest release and verifies its checksum. Installati
 Prefer a manual download? Get the ZIP and matching `.sha256` file from [Releases](https://github.com/VMatee/jv-cli/releases/latest), then:
 
 ```bash
-sha256sum -c jv-cli-0.4.6-linux-x86_64.zip.sha256
-unzip jv-cli-0.4.6-linux-x86_64.zip
+sha256sum -c jv-cli-0.4.7-linux-x86_64.zip.sha256
+unzip jv-cli-0.4.7-linux-x86_64.zip
 cd jv-cli
 ./verify.sh
 ./install.sh
@@ -77,7 +77,7 @@ The directory where you start is your workspace. Normal sessions can modify its 
 | Check your setup | `jvcli doctor` |
 | Show version/help | `jvcli --version` / `jvcli --help` |
 
-In an interactive session, use `/help`, `/status`, `/permissions`, `/new`, and `/exit`. Resume from the same workspace with the same account and service address.
+In an interactive session, type `/` to see commands with Thai descriptions. Continue typing to narrow the list, press Tab to complete a suggestion, or use arrow keys and Enter to select one. Misspelled commands suggest a likely spelling and never submit a task. Slash commands stay in English: `/help`, `/status`, `/permissions` (or `/permission`), `/new`, `/exit` (or `/quit`), and `/logout`. `/exit` keeps the saved account; `/logout` forgets it. Thai task input is supported, and JV CLI asks the assistant to answer in the task's language when practical. Resume from the same workspace with the same account and service address.
 
 Use `--verbose` for more detail. `jvcli exec --json "Your task"` provides JSONL output for automation.
 

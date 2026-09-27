@@ -41,6 +41,7 @@ from .safety import (
     terminal_text,
 )
 from .transport import DEFAULT_BASE_URL, JvApiClient, JvClientConfig, validate_base_url
+from .slash_ui import command_action, help_text, read_interactive_task, unknown_command_message
 
 ENGINE_VERSION = "0.149.1"
 APP_ROOT = Path(__file__).resolve().parents[2]
@@ -966,21 +967,23 @@ def _run_session(
                     task = prompt
                 else:
                     try:
-                        print("\n> ", end="", file=sys.stderr, flush=True)
-                        task = input().strip()
+                        task = read_interactive_task()
                     except (EOFError, KeyboardInterrupt):
                         say("")
                         return 0
                     if not task:
                         continue
-                    if task in ("/exit", "/quit"):
+                    action = command_action(task)
+                    if action == "exit":
                         return 0
-                    if task == "/help":
-                        say(
-                            "/new: start a new agent thread\n/status: show session and last job\n/permissions (or /permission): show current workspace and network policy\n/exit: sign out and exit\nCtrl+C during a turn: stop local work and exit"
-                        )
+                    if action == "logout":
+                        _save_disk_config({})
+                        say("ลบบัญชีที่บันทึกไว้แล้ว และกำลังออกจากเซสชัน")
+                        return 0
+                    if action == "help":
+                        say(help_text())
                         continue
-                    if task in ("/permission", "/permissions"):
+                    if action == "permissions":
                         say(
                             f"Workspace: {workspace}\nSandbox: {'read-only' if read_only else 'workspace-write'}\n"
                             f"Tool network: {'enabled' if allow_network else 'disabled'}\n"
@@ -989,14 +992,14 @@ def _run_session(
                             "Installation and engine state are isolated; this is not a VM or a guarantee that other files cannot be read."
                         )
                         continue
-                    if task == "/status":
+                    if action == "status":
                         say(
                             f"Session: {sid}\nThread: {thread_id or 'new'}\nState: {runtime.status}\n"
                             f"Transport: {transport_mode}\nLast JV job: {runtime.last_job_id or 'none'}\n"
                             f"Last JV response: {runtime.last_response_id or 'none'}"
                         )
                         continue
-                    if task == "/new":
+                    if action == "new":
                         if runtime.lock.locked():
                             say(
                                 "Previous request is still stopping. Exit and restart before submitting another task."
@@ -1008,7 +1011,7 @@ def _run_session(
                             )
                         continue
                     if task.startswith("/"):
-                        say("Unknown command; use /help")
+                        say(unknown_command_message(task))
                         continue
                 runtime.begin_turn()
                 rc, new_thread = _run_engine(

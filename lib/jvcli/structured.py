@@ -25,6 +25,7 @@ Shell environment changes do not persist between calls. Use the supplied workspa
 For local web checks prefer framework test clients. If a server is necessary, bind to an ephemeral loopback port and guarantee shutdown.
 Return either one normal assistant message, one declared function call, or the declared custom apply_patch call. Never encode tool calls in prose or fenced JSON. Preserve freeform patch input exactly.
 Keep final answers concise and distinguish verified results from limitations.
+Answer in the language of the user's latest task when practical, including Thai. Keep code, file paths, tool names, and protocol keys literal.
 '''
 
 MAX_ROUNDS = 500

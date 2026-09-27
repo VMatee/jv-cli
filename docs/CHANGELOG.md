@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.7 — interactive command suggestions and Thai input
+
+- Show live English slash-command suggestions with Thai descriptions, Tab completion, and arrow-key selection in an interactive terminal.
+- Suggest likely spellings for unknown slash commands without sending them as model tasks.
+- Add interactive `/logout` to forget the saved account; `/exit` continues to keep it.
+- Preserve Thai task input and ask the assistant to answer in the task's language when practical.
+
 ## 0.4.6 — clearer execution failures
 
 - Distinguish remote output rejection and provider cleanup failures from project tool errors.

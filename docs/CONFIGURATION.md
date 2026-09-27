@@ -10,6 +10,8 @@ jvcli logout
 
 `login` verifies your account and saves your username and service address. Passwords and authentication tokens are not intentionally saved. Each process authenticates when needed. `auth status` shows configuration, not a live sign-in check. `logout` forgets saved account settings; exit other running sessions separately.
 
+Inside an interactive session, `/exit` (or `/quit`) closes the session and keeps the saved account. `/logout` closes the session and forgets saved account settings. A username explicitly set in `JV_API_USERNAME` may still be selected on a later run. Slash commands are English only; the interactive command list has Thai descriptions, and Thai task text is accepted unchanged.
+
 Saved configuration contains only these fields:
 
 ```json
