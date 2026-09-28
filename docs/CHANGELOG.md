@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.8 — offline installation package
+
+- Add a Linux x86_64 offline ZIP containing JV CLI source, the pinned agent engine, and Node.js.
+- Verify the offline runtime files before installation and check the bundled engine before replacing an existing runtime.
+- Keep the normal smaller online ZIP available. Using AI tasks still requires a connection to the JV service.
+
 ## 0.4.7 — interactive command suggestions and Thai input
 
 - Show live English slash-command suggestions with Thai descriptions, Tab completion, and arrow-key selection in an interactive terminal.

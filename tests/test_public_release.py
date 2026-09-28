@@ -189,6 +189,8 @@ class PublicReleaseTests(unittest.TestCase):
             (root / ".state/secret").write_text("secret")
             (root / "runtime/node_modules").mkdir(parents=True)
             (root / "runtime/node_modules/private").write_text("private")
+            (root / "offline/runtime").mkdir(parents=True)
+            (root / "offline/runtime/engine").write_text("private")
             (root / ".env.local").write_text("SECRET=value")
             with patch.object(build_release, "ROOT", root):
                 build_release.main()
@@ -209,6 +211,31 @@ class PublicReleaseTests(unittest.TestCase):
                     for part in (".state/", "runtime/", ".env")
                 )
             )
+
+    def test_offline_bundle_rejects_changed_engine_before_install(self):
+        required = (
+            "runtime/bin/node",
+            "runtime/NODE-LICENSE",
+            "runtime/node_modules/.bin/codex",
+            "runtime/node_modules/@openai/codex/bin/codex.js",
+            "runtime/node_modules/@openai/codex/package.json",
+            "runtime/node_modules/@openai/codex-linux-x64/package.json",
+            "runtime/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex",
+        )
+        with tempfile.TemporaryDirectory() as td:
+            source = Path(td)
+            offline = source / "offline"
+            lines = []
+            for name in required:
+                file = offline / name
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_bytes(name.encode())
+                lines.append(hashlib.sha256(file.read_bytes()).hexdigest() + "  " + name)
+            (offline / "MANIFEST.sha256").write_text("\n".join(lines) + "\n")
+            self.assertEqual(manage._bundled_runtime(source), offline / "runtime")
+            (offline / required[-1]).write_bytes(b"changed")
+            with self.assertRaises(JvError):
+                manage._bundled_runtime(source)
 
     def test_release_build_needs_no_credentials(self):
         text = (ROOT / "scripts/build_release.py").read_text()

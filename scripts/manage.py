@@ -29,6 +29,7 @@ EXCLUDED_DIRS = {
     ".state",
     ".cache",
     "runtime",
+    "offline",
     ".backups",
     "dist",
     "downloads",
@@ -153,15 +154,11 @@ def check_prerequisites(no_engine: bool = False) -> None:
         errors.append(
             "Python 3.10 or later is required (Ubuntu: sudo apt install python3)"
         )
-    for command, package in (
-        ("curl", "curl"),
-        ("unzip", "unzip"),
-        ("node", "nodejs"),
-        ("npm", "npm"),
-    ):
-        if not shutil.which(command):
-            errors.append(f"{command} is required (Ubuntu: sudo apt install {package})")
-    if shutil.which("node"):
+    if not no_engine:
+        for command, package in (("node", "nodejs"), ("npm", "npm")):
+            if not shutil.which(command):
+                errors.append(f"{command} is required (Ubuntu: sudo apt install {package})")
+    if not no_engine and shutil.which("node"):
         try:
             result = subprocess.run(
                 ["node", "-p", "process.versions.node"],
@@ -196,7 +193,62 @@ def engine_version(engine: Path, env: dict[str, str]) -> str:
     return match.group(0)
 
 
-def _install_engine(root: Path, no_engine: bool, offline: bool) -> None:
+def _bundled_runtime(source: Path) -> Path:
+    offline = no_symlink_path(source / "offline")
+    checksum_file = no_symlink_path(offline / "MANIFEST.sha256")
+    if not checksum_file.is_file():
+        raise JvError("Offline runtime manifest is missing; use the offline release ZIP")
+    expected: dict[str, str] = {}
+    for line in checksum_file.read_text(encoding="ascii").splitlines():
+        try:
+            digest, relative = line.split("  ", 1)
+        except ValueError:
+            raise JvError("Invalid offline runtime manifest") from None
+        path = Path(relative)
+        if (
+            not re.fullmatch(r"[0-9a-f]{64}", digest)
+            or not path.parts
+            or path.parts[0] != "runtime"
+            or path.is_absolute()
+            or ".." in path.parts
+            or relative != path.as_posix()
+            or relative in expected
+        ):
+            raise JvError("Unsafe offline runtime manifest")
+        file = no_symlink_path(offline / path)
+        if not file.is_file() or _file_sha256(file) != digest:
+            raise JvError(f"Offline runtime integrity check failed: {relative}")
+        expected[relative] = digest
+    actual = set()
+    for file in offline.rglob("*"):
+        no_symlink_path(file)
+        if file.is_file() and file != checksum_file:
+            actual.add(file.relative_to(offline).as_posix())
+    required = {
+        "runtime/bin/node",
+        "runtime/NODE-LICENSE",
+        "runtime/node_modules/.bin/codex",
+        "runtime/node_modules/@openai/codex/bin/codex.js",
+        "runtime/node_modules/@openai/codex/package.json",
+        "runtime/node_modules/@openai/codex-linux-x64/package.json",
+        "runtime/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex",
+    }
+    if actual != set(expected) or not required <= actual:
+        raise JvError("Offline runtime file set is incomplete or changed")
+    return offline / "runtime"
+
+
+def _file_sha256(path: Path) -> str:
+    result = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            result.update(chunk)
+    return result.hexdigest()
+
+
+def _install_engine(
+    root: Path, no_engine: bool, offline: bool, bundled_runtime: Path | None = None
+) -> None:
     private_dir(root / ".state")
     cache = private_dir(root / ".cache")
     env = {
@@ -231,7 +283,7 @@ def _install_engine(root: Path, no_engine: bool, offline: bool) -> None:
                 version = engine_version(engine, env)
             except (JvError, subprocess.SubprocessError):
                 pass
-        if version == ENGINE_VERSION:
+        if version == ENGINE_VERSION and bundled_runtime is None:
             print(
                 f"Pinned engine {ENGINE_VERSION} is already installed; no download needed"
             )
@@ -239,37 +291,53 @@ def _install_engine(root: Path, no_engine: bool, offline: bool) -> None:
         stage = Path(tempfile.mkdtemp(prefix="engine-stage-", dir=cache))
         backup = cache / ("runtime-backup-" + uuid.uuid4().hex)
         try:
-            (stage / "package.json").write_text(
-                json.dumps(
-                    {
-                        "name": "jvcli-local-engine",
-                        "private": True,
-                        "dependencies": {"@openai/codex": ENGINE_VERSION},
-                    }
+            if bundled_runtime is not None:
+                shutil.copytree(bundled_runtime, stage, dirs_exist_ok=True)
+                print(f"Installing bundled engine {ENGINE_VERSION}", flush=True)
+            else:
+                (stage / "package.json").write_text(
+                    json.dumps(
+                        {
+                            "name": "jvcli-local-engine",
+                            "private": True,
+                            "dependencies": {"@openai/codex": ENGINE_VERSION},
+                        }
+                    )
+                    + "\n"
                 )
-                + "\n"
-            )
-            print(
-                f"Installing pinned engine {ENGINE_VERSION} inside {root / 'runtime'}",
-                flush=True,
-            )
-            command = [
-                "npm",
-                "install",
-                "--prefix",
-                str(stage),
-                "--ignore-scripts",
-                "--no-audit",
-                "--no-fund",
-            ]
-            if offline:
-                command.append("--offline")
-            result = subprocess.run(command, env=env, cwd=stage, timeout=600)
-            if result.returncode:
-                raise JvError(
-                    "Local engine installation failed. The previous runtime was preserved"
+                print(
+                    f"Installing pinned engine {ENGINE_VERSION} inside {root / 'runtime'}",
+                    flush=True,
                 )
+                command = [
+                    "npm",
+                    "install",
+                    "--prefix",
+                    str(stage),
+                    "--ignore-scripts",
+                    "--no-audit",
+                    "--no-fund",
+                ]
+                if offline:
+                    command.append("--offline")
+                result = subprocess.run(command, env=env, cwd=stage, timeout=600)
+                if result.returncode:
+                    raise JvError(
+                        "Local engine installation failed. The previous runtime was preserved"
+                    )
             candidate = stage / "node_modules/.bin/codex"
+            if bundled_runtime is not None:
+                node_result = subprocess.run(
+                    [str(stage / "bin/node"), "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                    env=env,
+                )
+                if node_result.returncode or not re.fullmatch(
+                    r"v\d+\.\d+\.\d+\n?", node_result.stdout
+                ):
+                    raise JvError("Bundled Node.js version check failed")
             if engine_version(candidate, env) != ENGINE_VERSION:
                 raise JvError("Downloaded engine version does not match the pin")
             for args in (["exec", "--help"], ["exec", "resume", "--help"]):
@@ -351,7 +419,7 @@ def _install_launcher(root: Path, home: Path) -> Path:
     return launcher
 
 
-def _path_notice(home: Path, add_path: bool) -> None:
+def _path_notice(home: Path, add_path: bool, installer: str = "install.sh") -> None:
     local_bin = home / ".local/bin"
     path_entries = [
         Path(p).expanduser() for p in os.environ.get("PATH", "").split(os.pathsep) if p
@@ -363,7 +431,7 @@ def _path_notice(home: Path, add_path: bool) -> None:
             f'\n{local_bin} is not in PATH. Add it for this shell with:\n  export PATH="$HOME/.local/bin:$PATH"'
         )
         print(
-            "Re-run ./install.sh --add-path only if you want JV CLI to add this line to ~/.bashrc."
+            f"Re-run ./{installer} --add-path only if you want JV CLI to add this line to ~/.bashrc."
         )
         return
     bashrc = no_symlink_path(home / ".bashrc")
@@ -389,6 +457,7 @@ def install(
     no_engine: bool = False,
     offline: bool = False,
     *,
+    bundled: bool = False,
     portable: bool = False,
     add_path: bool = False,
     home: Path | None = None,
@@ -397,8 +466,14 @@ def install(
         raise JvError(
             "Do not install with sudo or as root. Run ./install.sh as your normal Ubuntu user"
         )
-    check_prerequisites(no_engine)
+    if bundled and (no_engine or offline):
+        raise JvError("Bundled installation cannot be combined with --no-engine or --offline")
+    check_prerequisites(no_engine or bundled)
     source = check_tree(source)
+    bundle_runtime = None
+    if bundled:
+        manifest(source)
+        bundle_runtime = _bundled_runtime(source)
     home = no_symlink_path(home or Path.home())
     if portable:
         root = source
@@ -406,7 +481,7 @@ def install(
         root = no_symlink_path(home / ".local/share/jv-cli")
         if source != root:
             _copy_release(source, root)
-    _install_engine(root, no_engine, offline)
+    _install_engine(root, no_engine, offline, bundle_runtime)
     for path in [
         root / "jvcli",
         root / "bin/jvcli",
@@ -425,7 +500,7 @@ def install(
         print(
             f"\nJV CLI {VERSION} installed for this user.\nRoot: {root}\nLauncher: {launcher}"
         )
-        _path_notice(home, add_path)
+        _path_notice(home, add_path, "install-offline.sh" if bundled else "install.sh")
         print("Run: jvcli doctor\nThen: jvcli login")
     if no_engine:
         print(
@@ -549,6 +624,7 @@ def main() -> int:
     setup = subs.add_parser("install")
     setup.add_argument("--no-engine", action="store_true")
     setup.add_argument("--offline", action="store_true")
+    setup.add_argument("--bundled", action="store_true")
     setup.add_argument("--portable", action="store_true")
     setup.add_argument("--add-path", action="store_true")
     up = subs.add_parser("upgrade")
@@ -568,6 +644,7 @@ def main() -> int:
                 ROOT,
                 args.no_engine,
                 args.offline,
+                bundled=args.bundled,
                 portable=args.portable,
                 add_path=args.add_path,
             )

@@ -2,16 +2,17 @@
 
 An AI coding assistant for your terminal. Ask questions about a project, make changes, run checks, and return to saved work.
 
-**Source version: 0.4.7** · [Published releases](https://github.com/VMatee/jv-cli/releases/latest) · [What's new](docs/CHANGELOG.md)
+**Source version: 0.4.8** · [Published releases](https://github.com/VMatee/jv-cli/releases/latest) · [What's new](docs/CHANGELOG.md)
 
 ## Get started
 
 ### Requirements
 
 - Ubuntu/Linux x86_64. Other platforms are not currently supported by this package.
-- Python 3.10+, Node.js 18+, and npm.
-- Internet access during installation and use, and an existing JV account.
-- `curl`, `unzip`, and `sha256sum` for release installation.
+- Python 3.10+ and an existing JV account.
+- For the normal ZIP: Node.js 18+, npm, and internet access during installation.
+- For the offline ZIP: `unzip` and `sha256sum`; Node.js is included and npm is not required.
+- A connection to the JV service is still required to sign in and run AI tasks.
 
 ### Install
 
@@ -30,14 +31,31 @@ The installer downloads the latest release and verifies its checksum. Installati
 Prefer a manual download? Get the ZIP and matching `.sha256` file from [Releases](https://github.com/VMatee/jv-cli/releases/latest), then:
 
 ```bash
-sha256sum -c jv-cli-0.4.7-linux-x86_64.zip.sha256
-unzip jv-cli-0.4.7-linux-x86_64.zip
+sha256sum -c jv-cli-0.4.8-linux-x86_64.zip.sha256
+unzip jv-cli-0.4.8-linux-x86_64.zip
 cd jv-cli
 ./verify.sh
 ./install.sh
 ```
 
 Stop if verification fails. The application is installed under `~/.local/share/jv-cli` with a command at `~/.local/bin/jvcli`. Shell startup files change only if you explicitly use `./install.sh --add-path`.
+
+### Install without downloading dependencies
+
+Download `jv-cli-0.4.8-linux-x86_64-offline.zip` and its matching `.sha256` file from [Releases](https://github.com/VMatee/jv-cli/releases/latest). Copy both files to the Linux computer, then run:
+
+```bash
+sha256sum -c jv-cli-0.4.8-linux-x86_64-offline.zip.sha256
+unzip jv-cli-0.4.8-linux-x86_64-offline.zip
+cd jv-cli
+./verify.sh
+./install-offline.sh
+export PATH="$HOME/.local/bin:$PATH"
+jvcli --version
+jvcli doctor
+```
+
+This ZIP contains the JV CLI source, the pinned agent engine, and Node.js for Ubuntu/Linux x86_64. Installation uses the bundled files without npm or an internet connection. The computer still needs Python 3.10+, standard Linux libraries, and internet access to the JV service when using AI features. No system packages are installed or changed.
 
 ### Sign in
 
