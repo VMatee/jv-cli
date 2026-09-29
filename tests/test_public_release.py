@@ -30,10 +30,13 @@ class PublicReleaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "VERSION").write_text("0.4.2\n")
+            (root / ".git").write_text("gitdir: /private/shared/worktree\n")
             for name in (".pytest_cache", ".ruff_cache", ".mypy_cache", ".audit"):
                 (root / name).mkdir()
                 (root / name / "private.json").write_text("synthetic private content")
             self.assertEqual(manage.public_files(root), [Path("VERSION")])
+            self.assertEqual(manage.write_manifest(root), 1)
+            self.assertEqual(set(manage.manifest(root)), {"VERSION"})
 
     def install_without_engine(self, home):
         with (

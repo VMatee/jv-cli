@@ -369,6 +369,10 @@ def _write_engine_config(
             "ignore_default_excludes": False,
             "exclude": ["JVCLI_ADAPTER_KEY", "JV_API_PASSWORD", "JV_API_USERNAME"],
             "set": {
+                # Engine 0.149.1 still passes the provider env_key to shell tools
+                # despite exclude. Override the tool copy without changing the
+                # engine's own key used for loopback adapter authentication.
+                "JVCLI_ADAPTER_KEY": "",
                 "HOME": str(tool_home),
                 "TMPDIR": str(tmp),
                 "XDG_CACHE_HOME": str(tool_home / ".cache"),

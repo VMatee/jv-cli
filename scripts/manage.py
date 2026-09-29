@@ -40,7 +40,7 @@ EXCLUDED_DIRS = {
     ".mypy_cache",
     ".audit",
 }
-EXCLUDED_FILES = {"MANIFEST.sha256", ".env", "credentials", "credentials.json"}
+EXCLUDED_FILES = {".git", "MANIFEST.sha256", ".env", "credentials", "credentials.json"}
 PATH_LINE = 'export PATH="$HOME/.local/bin:$PATH"'
 
 

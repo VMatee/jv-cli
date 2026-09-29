@@ -1,3 +1,12 @@
+> **Windows development worktree — not a Windows release yet.**
+>
+> Branch: `feature/windows-powershell`. Starting Linux baseline: **0.4.7**.
+> See [Windows development plan and agent handoff](docs/WINDOWS_DEVELOPMENT.md)
+> and [phase 3 findings](docs/WINDOWS_PHASE3_FINDINGS.md) for completed
+> preparation, compatibility findings, implementation steps, and acceptance gates.
+> The guide below describes the existing Linux release. Do not use its installation
+> commands to replace your working Linux installation while developing this port.
+
 # JV CLI
 
 An AI coding assistant for your terminal. Ask questions about a project, make changes, run checks, and return to saved work.

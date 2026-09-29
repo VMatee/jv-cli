@@ -181,6 +181,8 @@ print(json.dumps({"type":"turn.completed"}))
             self.assertEqual(config['approval_policy'],'never')
             self.assertFalse(config['sandbox_workspace_write']['network_access'])
             self.assertEqual(config['model_providers']['jv']['env_key'],'JVCLI_ADAPTER_KEY')
+            self.assertEqual(config['shell_environment_policy']['set']['JVCLI_ADAPTER_KEY'],'')
+            self.assertIn('JVCLI_ADAPTER_KEY',config['shell_environment_policy']['exclude'])
             self.assertIn('sandbox_mode="read-only"',overrides)
             self.assertNotIn('danger-full-access',(path/'engine/config.toml').read_text())
     def test_sessions_have_independent_provider_ports(self):

@@ -1,3 +1,27 @@
+# Windows worktree scope
+
+This checkout is the isolated `feature/windows-powershell` worktree. Read
+[docs/WINDOWS_DEVELOPMENT.md](docs/WINDOWS_DEVELOPMENT.md) before continuing.
+
+- Implement future Windows changes here, never in the sibling Linux `jvcli/` checkout.
+- Preparation is complete; a scoped engine key-isolation safeguard and package
+  inventory fix are now in this branch. Native Windows validation remains pending.
+  Follow the phase gates and phase 3 findings.
+- Keep the original Linux installation, runtime, credentials, and state untouched.
+- Worktrees share Git objects/refs: do not change `main`, tags, remotes, or other branches.
+- Do not copy `.git`, runtime, private state, or credentials into packages/checkpoints.
+- Use synthetic credentials and temporary homes for offline tests. No production inference,
+  scenario execution, service restart, account/routing changes, or browser operations.
+- Do not publish, release, merge, or install into the normal user home without authorization.
+- Keep source version 0.4.7 until an explicit preview-version decision; do not publish
+  modified Windows work as the already released 0.4.7 artifact.
+- The package inventory now excludes a linked worktree's root `.git` file. Keep
+  its regression test and verify generated artifacts contain no Git metadata.
+- Maintain the progress record in the development plan after each phase. Report actual
+  checks and blockers; do not declare Windows support based only on Linux tests.
+
+The inherited contributor rules below still apply.
+
 # JV CLI contributor guide
 
 Read `README.md`, the relevant source and tests, and this guide before making changes. `VERSION` is the canonical version.
