@@ -1,0 +1,50 @@
+[
+  {
+    "request": {
+      "type": "auth.login",
+      "request_id": "login1",
+      "username": "synthetic",
+      "base_url": "http://127.0.0.1:9",
+      "password": "TEST_PASSWORD_DO_NOT_LEAK"
+    },
+    "events": [
+      "auth.succeeded"
+    ]
+  },
+  {
+    "request": {
+      "type": "session.start",
+      "request_id": "session1",
+      "read_only": false,
+      "allow_network": false
+    },
+    "events": [
+      "session.started"
+    ]
+  },
+  {
+    "request": {
+      "type": "turn.start",
+      "request_id": "turn1",
+      "text": "ช่วยตรวจ project นี้"
+    },
+    "events": [
+      "turn.started",
+      "command.started",
+      "command.completed",
+      "tool.started",
+      "files.changed",
+      "assistant.message",
+      "turn.completed"
+    ]
+  },
+  {
+    "request": {
+      "type": "bridge.shutdown",
+      "request_id": "shutdown1"
+    },
+    "events": [
+      "bridge.stopping"
+    ]
+  }
+]

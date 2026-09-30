@@ -578,6 +578,9 @@ def _run_engine(
     turn_timeout=None,
     verbose=False,
     images=(),
+    event_sink=None,
+    render_terminal=True,
+    cancel_event=None,
 ):
     if (
         not isinstance(prompt, str)
@@ -585,6 +588,11 @@ def _run_engine(
         or len(prompt.encode()) > 100 * 1024
     ):
         raise JvError("Prompt must be nonempty and no larger than 100 KiB")
+    report = say if render_terminal else lambda *args, **kwargs: None
+    if cancel_event is not None and cancel_event.is_set():
+        if runtime:
+            runtime.cancel.set()
+        return 130, thread_id
     # Prompt travels over stdin, not process arguments or shell expansion.
     command = [engine, *overrides, "exec"]
     if thread_id:
@@ -666,16 +674,21 @@ def _run_engine(
     command_active = False
     try:
         while True:
+            if cancel_event is not None and cancel_event.is_set():
+                if runtime:
+                    runtime.cancel.set()
+                forced_rc = 130
+                break
             if runtime:
                 while True:
                     try:
-                        say(redact(runtime.notices.get_nowait(), secrets))
+                        report(redact(runtime.notices.get_nowait(), secrets))
                     except queue.Empty:
                         break
             if turn_timeout is not None and time.monotonic() - started >= turn_timeout:
                 if runtime:
                     runtime.cancel.set()
-                say(
+                report(
                     "Turn timed out. Local agent stopped; an already submitted remote job may continue."
                 )
                 forced_rc = 124
@@ -691,19 +704,19 @@ def _run_engine(
                     )
                     notice = progress.update(status, time.monotonic(), verbose=verbose)
                     if notice:
-                        say(notice)
+                        report(notice)
                     last_progress = time.monotonic()
                 continue
             if kind == "eof":
                 break
             if kind == "input_error":
                 failed = True
-                say(raw)
+                report(raw)
                 break
             last_progress = time.monotonic()
             if len(raw.encode()) > 1024 * 1024:
                 failed = True
-                say("Agent event exceeded the allowed size")
+                report("Agent event exceeded the allowed size")
                 break
             try:
                 event = strict_json(raw)
@@ -711,8 +724,11 @@ def _run_engine(
                     raise ValueError()
             except (ValueError, UnicodeError, RecursionError):
                 failed = True
-                say("Agent returned malformed JSON output")
+                report("Agent returned malformed JSON output")
                 break
+            if event_sink is not None:
+                event = redact_data(event, secrets)
+                event_sink(event)
             if json_mode:
                 # Redaction is applied before parsing again to avoid escape issues.
                 print(
@@ -721,7 +737,9 @@ def _run_engine(
                 )
             typ = event.get("type")
             if typ == "thread.started" and isinstance(event.get("thread_id"), str):
-                current = event["thread_id"]
+                candidate = event["thread_id"]
+                if event_sink is None or re.fullmatch(r"[A-Za-z0-9_-]{1,100}", candidate):
+                    current = candidate
             elif typ in ("item.started", "item.completed"):
                 item = event.get("item")
                 if isinstance(item, dict):
@@ -734,7 +752,7 @@ def _run_engine(
                         and item["text"].strip()
                     ):
                         saw_message = True
-                    if not json_mode:
+                    if render_terminal and not json_mode:
                         # Redact any accidental echo of known secrets before display.
                         item = redact_data(item, secrets)
                         _describe_item(
@@ -751,14 +769,17 @@ def _run_engine(
                     else event.get("message")
                 )
                 if message and not (runtime and runtime.last_error):
-                    say("Error: " + redact(str(message), secrets))
+                    report("Error: " + redact(str(message), secrets))
     except KeyboardInterrupt:
         forced_rc = 130
         if runtime:
             runtime.cancel.set()
-        say("Interrupted. Local agent stopped; submitted remote jobs may continue.")
+        report("Interrupted. Local agent stopped; submitted remote jobs may continue.")
     except BrokenPipeError:
         failed = True
+    except Exception:
+        failed = True
+        raise
     finally:
         stopping.set()
         if forced_rc is not None or failed:
@@ -776,14 +797,14 @@ def _run_engine(
     if rc or failed:
         for line in list(stderr_lines)[-12:]:
             if line.strip():
-                say(line.rstrip())
+                report(line.rstrip())
     if runtime and runtime.last_error:
         failed = True
-        say("JV adapter: " + redact(runtime.last_error, secrets))
+        report("JV adapter: " + redact(runtime.last_error, secrets))
     if forced_rc is not None:
         return forced_rc, current
     if rc == 0 and not failed and (not completed or not saw_message):
-        say(
+        report(
             "Agent ended without a confirmed final answer. This is not reported as success."
         )
         failed = True
@@ -794,7 +815,7 @@ def _run_engine(
         and runtime.processor.last_completion
         not in ("committed", "conversation_complete")
     ):
-        say("JV-AGENT-INCOMPLETE: no accepted task completion commitment.")
+        report("JV-AGENT-INCOMPLETE: no accepted task completion commitment.")
         failed = True
     rc = 128 - rc if rc < 0 else rc
     return (1 if failed and rc == 0 else rc), current
@@ -837,15 +858,14 @@ def _session_directory(value):
     return no_symlink_path(STATE_DIR / "runs" / value)
 
 
-def _run_session(
-    prompt=None,
+@contextlib.contextmanager
+def _session_runtime(
     *,
     resume=None,
     read_only=False,
     allow_network=None,
-    json_mode=False,
-    verbose=False,
     images=(),
+    account=None,
 ):
     workspace = _workspace_check(Path.cwd())
     if allow_network is None:
@@ -862,7 +882,7 @@ def _run_session(
         raise JvError(
             f"Engine {actual} is not the pinned {ENGINE_VERSION}; run ./install.sh. No automatic downgrade is performed at runtime"
         )
-    base, user = _resolve_account()
+    base, user = _resolve_account() if account is None else (account[2], account[1])
     structured = _structured_enabled()
     if images and not structured:
         raise JvError(
@@ -922,7 +942,7 @@ def _run_session(
         image_snapshots = snapshot_images(
             images, workspace, session_dir / "images" / uuid.uuid4().hex
         )
-        client, user = _login_client(user, base)
+        client, user = _login_client(user, base) if account is None else account[:2]
         try:
             processor = (
                 AgentProcessor(client, session_dir / "structured")
@@ -930,7 +950,8 @@ def _run_session(
                 else None
             )
         except Exception:
-            _logout(client)
+            if account is None:
+                _logout(client)
             raise
         runtime = AdapterRuntime(client, max_requests=max_requests, processor=processor)
         thread_id = metadata.get("thread_id")
@@ -953,104 +974,130 @@ def _run_session(
             atomic_write(
                 session_dir / "session.json", json.dumps(metadata, indent=2) + "\n"
             )
-            say(
-                f"JV CLI {VERSION}\nWorkspace: {workspace}\nSession: {sid}\nSandbox: {'read-only' if read_only else 'workspace-write'}; tool network: {'enabled' if allow_network else 'disabled'}"
+            yield SessionRuntime(
+                workspace, sid, session_dir, metadata, engine, overrides,
+                runtime, turn_timeout, image_snapshots, read_only, allow_network,
             )
-            say(
-                "Only use trusted projects. The selected workspace may be changed; installation isolation is not a VM."
-            )
-            if prompt is None:
-                say("Type /help for commands.")
-            while True:
-                one_shot = prompt is not None
-                if one_shot:
-                    task = prompt
-                else:
-                    try:
-                        task = read_interactive_task()
-                    except (EOFError, KeyboardInterrupt):
-                        say("")
-                        return 0
-                    if not task:
-                        continue
-                    action = command_action(task)
-                    if action == "exit":
-                        return 0
-                    if action == "logout":
-                        _save_disk_config({})
-                        say("ลบบัญชีที่บันทึกไว้แล้ว และกำลังออกจากเซสชัน")
-                        return 0
-                    if action == "help":
-                        say(help_text())
-                        continue
-                    if action == "permissions":
-                        say(
-                            f"Workspace: {workspace}\nSandbox: {'read-only' if read_only else 'workspace-write'}\n"
-                            f"Tool network: {'enabled' if allow_network else 'disabled'}\n"
-                            "Policy is fixed for this session; restart with --read-only, --no-network or --allow-network to change it.\n"
-                            "No YOLO/sandbox-bypass mode. Network access does not authorize global installations.\n"
-                            "Installation and engine state are isolated; this is not a VM or a guarantee that other files cannot be read."
-                        )
-                        continue
-                    if action == "status":
-                        say(
-                            f"Session: {sid}\nThread: {thread_id or 'new'}\nState: {runtime.status}\n"
-                            f"Transport: {transport_mode}\nLast JV job: {runtime.last_job_id or 'none'}\n"
-                            f"Last JV response: {runtime.last_response_id or 'none'}"
-                        )
-                        continue
-                    if action == "new":
-                        if runtime.lock.locked():
-                            say(
-                                "Previous request is still stopping. Exit and restart before submitting another task."
-                            )
-                        else:
-                            thread_id = None
-                            say(
-                                "New agent thread. Saved earlier engine histories are retained locally."
-                            )
-                        continue
-                    if task.startswith("/"):
-                        say(unknown_command_message(task))
-                        continue
-                runtime.begin_turn()
-                rc, new_thread = _run_engine(
-                    engine,
-                    task,
-                    thread_id,
-                    session_dir=session_dir,
-                    overrides=overrides,
-                    runtime=runtime,
-                    json_mode=json_mode,
-                    verbose=verbose,
-                    turn_timeout=turn_timeout,
-                    images=image_snapshots,
-                )
-                image_snapshots = []
-                if new_thread:
-                    thread_id = new_thread
-                    metadata["thread_id"] = thread_id
-                metadata["last_job_id"] = runtime.last_job_id
-                metadata["last_response_id"] = runtime.last_response_id
-                metadata["last_exit_code"] = rc
-                metadata["model_requests"] = runtime.requests
-                metadata["response_repairs"] = runtime.response_repairs
-                atomic_write(
-                    session_dir / "session.json", json.dumps(metadata, indent=2) + "\n"
-                )
-                if one_shot or rc in (124, 130):
-                    return rc
-                if rc:
-                    say(
-                        "Turn stopped. Check /status and the reported JV job before resubmitting a task."
-                    )
         finally:
             runtime.close()
-            _logout(client)
+            if account is None:
+                _logout(client)
     finally:
         os.close(lock_fd)
         os.close(install_fd)
 
+
+class SessionRuntime:
+    """Shared session/turn bookkeeping. Caller owns serialization and context lifetime."""
+
+    def __init__(self, workspace, sid, session_dir, metadata, engine, overrides,
+                 runtime, turn_timeout, images, read_only, allow_network):
+        self.workspace, self.sid, self.session_dir = workspace, sid, session_dir
+        self.metadata, self.engine, self.overrides = metadata, engine, overrides
+        self.runtime, self.turn_timeout, self.images = runtime, turn_timeout, images
+        self.read_only, self.allow_network = read_only, allow_network
+        self.thread_id = metadata.get("thread_id")
+
+    def new_thread(self):
+        if self.runtime.lock.locked():
+            raise JvError("Previous request is still stopping")
+        self.thread_id = None
+
+    def run_turn(self, task, **options):
+        self.runtime.begin_turn()
+        rc, new_thread = _run_engine(
+            self.engine, task, self.thread_id, session_dir=self.session_dir,
+            overrides=self.overrides, runtime=self.runtime,
+            turn_timeout=self.turn_timeout, images=self.images, **options,
+        )
+        self.images = []
+        if new_thread:
+            self.thread_id = new_thread
+            self.metadata["thread_id"] = self.thread_id
+        self.metadata["last_job_id"] = self.runtime.last_job_id
+        self.metadata["last_response_id"] = self.runtime.last_response_id
+        self.metadata["last_exit_code"] = rc
+        self.metadata["model_requests"] = self.runtime.requests
+        self.metadata["response_repairs"] = self.runtime.response_repairs
+        atomic_write(self.session_dir / "session.json",
+                     json.dumps(self.metadata, indent=2) + "\n")
+        return rc
+
+
+def _run_session(prompt=None, *, resume=None, read_only=False, allow_network=None,
+                 json_mode=False, verbose=False, images=()):
+    with _session_runtime(resume=resume, read_only=read_only,
+                          allow_network=allow_network, images=images) as session:
+        workspace, sid, runtime = session.workspace, session.sid, session.runtime
+        allow_network = session.allow_network
+        transport_mode = session.metadata["transport_mode"]
+        say(
+            f"JV CLI {VERSION}\nWorkspace: {workspace}\nSession: {sid}\nSandbox: {'read-only' if read_only else 'workspace-write'}; tool network: {'enabled' if allow_network else 'disabled'}"
+        )
+        say(
+            "Only use trusted projects. The selected workspace may be changed; installation isolation is not a VM."
+        )
+        if prompt is None:
+            say("Type /help for commands.")
+        while True:
+            one_shot = prompt is not None
+            if one_shot:
+                task = prompt
+            else:
+                try:
+                    task = read_interactive_task()
+                except (EOFError, KeyboardInterrupt):
+                    say("")
+                    return 0
+                if not task:
+                    continue
+                action = command_action(task)
+                if action == "exit":
+                    return 0
+                if action == "logout":
+                    _save_disk_config({})
+                    say("ลบบัญชีที่บันทึกไว้แล้ว และกำลังออกจากเซสชัน")
+                    return 0
+                if action == "help":
+                    say(help_text())
+                    continue
+                if action == "permissions":
+                    say(
+                        f"Workspace: {workspace}\nSandbox: {'read-only' if read_only else 'workspace-write'}\n"
+                        f"Tool network: {'enabled' if allow_network else 'disabled'}\n"
+                        "Policy is fixed for this session; restart with --read-only, --no-network or --allow-network to change it.\n"
+                        "No YOLO/sandbox-bypass mode. Network access does not authorize global installations.\n"
+                        "Installation and engine state are isolated; this is not a VM or a guarantee that other files cannot be read."
+                    )
+                    continue
+                if action == "status":
+                    say(
+                        f"Session: {sid}\nThread: {session.thread_id or 'new'}\nState: {runtime.status}\n"
+                        f"Transport: {transport_mode}\nLast JV job: {runtime.last_job_id or 'none'}\n"
+                        f"Last JV response: {runtime.last_response_id or 'none'}"
+                    )
+                    continue
+                if action == "new":
+                    if runtime.lock.locked():
+                        say(
+                            "Previous request is still stopping. Exit and restart before submitting another task."
+                        )
+                    else:
+                        session.new_thread()
+                        say(
+                            "New agent thread. Saved earlier engine histories are retained locally."
+                        )
+                    continue
+                if task.startswith("/"):
+                    say(unknown_command_message(task))
+                    continue
+            rc = session.run_turn(task, json_mode=json_mode, verbose=verbose)
+            if one_shot or rc in (124, 130):
+                return rc
+            if rc:
+                say(
+                    "Turn stopped. Check /status and the reported JV job before resubmitting a task."
+                )
 
 def command_login(args):
     client, user = _login_client(args.username, args.base_url)
@@ -1230,6 +1277,10 @@ def _parser():
         help="Deny tool networking; JV API requests still require a connection",
     )
     subs = parser.add_subparsers(dest="command")
+    bridge = subs.add_parser("bridge", help="Machine NDJSON protocol (development)",
+                             description="Versioned machine protocol over stdio; not an interactive terminal.")
+    bridge.add_argument("--stdio", action="store_true", required=True,
+                        help="Use the NDJSON machine transport on stdin/stdout")
     login = subs.add_parser(
         "login", help="Verify credentials and save username/API origin only"
     )
@@ -1307,6 +1358,7 @@ def main(argv=None):
     # Preserve the earlier jvcli "a task" shorthand without treating mistyped
     # option flags as an instruction sent to the LLM.
     known = {
+        "bridge",
         "exec",
         "resume",
         "login",
@@ -1325,6 +1377,11 @@ def main(argv=None):
     try:
         if sys.version_info < (3, 10):
             raise JvError("Python 3.10 or later is required")
+        if args.command == "bridge":
+            if args.read_only or args.allow_network is not None or args.verbose:
+                _parser().error("Bridge policy is selected by session.start, not terminal flags")
+            from .bridge import serve
+            return serve()
         if args.command == "doctor":
             return command_doctor(args.json)
         if args.command == "self-test":
