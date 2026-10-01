@@ -165,12 +165,16 @@ class DurableResponseState:
         if len(text.encode('utf-8')) > MAX_STATE_BYTES:
             raise JvError('Structured response state is too large; start a new JV CLI session')
         try:
-            atomic_write(self.path, text)
-            fd = os.open(self.directory, os.O_RDONLY | os.O_DIRECTORY)
-            try:
-                os.fsync(fd)
-            finally:
-                os.close(fd)
+            if os.name == 'nt':
+                from .platform.windows import durable_atomic_write
+                durable_atomic_write(self.path, text)
+            else:
+                atomic_write(self.path, text)
+                fd = os.open(self.directory, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
         except OSError:
             self.write_failed = True
             raise JvError('Structured state could not be saved; stop and reconcile before resuming') from None

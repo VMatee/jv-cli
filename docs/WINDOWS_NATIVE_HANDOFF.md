@@ -5,6 +5,102 @@ native Windows the same day. **Native Windows JV CLI is not functional or accept
 yet.** Private NTFS state and kernel locks now have native tests; execution and
 packaging remain blocked. Do not distribute this branch as a supported release.
 
+## Network boundary investigation and durable journal — 2026-10-01
+
+Starting local/fetched remote: `abc0d42461069e9ccacc7bb0da1e6b67b6d6c4c6`.
+Public Windows ready/session guards remain blocked. This pass changes neither
+the engine pin nor permission semantics and does not begin installer/Desktop work.
+
+### Network blocker: identified, not resolved
+
+`scripts/windows_network_probe.py --engine <verified native codex.exe>` exercises
+12 actual engine tool cases: PowerShell, Python and Node; IPv4 and IPv6; deny and
+allow policy. **All six deny cases connected; all six allow controls connected.**
+The script exits 1. It queries `GetExtendedTcpTable` for the accepted connection's
+client PID, records only process name/PID/parent PID, and checks `IsProcessInJob`
+against the exact JV-owned job handle. PowerShell is the direct child of Codex;
+Python and Node are children of that PowerShell tool. Every observed client was
+inside the owned job. The connection did not originate from the trusted engine
+or an out-of-job broker. No prompt, credentials or whole environment was captured.
+The initial PowerShell IPv6 probe required an explicit IPv6 TcpClient constructor;
+the corrected allow controls and deny cases both connected, so no failed client
+construction is being counted as network denial.
+
+Pinned source evidence (tag `rust-v0.149.1`, not newer documentation):
+[spawn_prep.rs](https://github.com/openai/codex/blob/rust-v0.149.1/codex-rs/windows-sandbox-rs/src/spawn_prep.rs)
+calls `apply_no_network_to_env` for legacy/unelevated spawning;
+[env.rs](https://github.com/openai/codex/blob/rust-v0.149.1/codex-rs/windows-sandbox-rs/src/env.rs)
+sets proxy/offline variables and deny stubs, including a loopback NO_PROXY list.
+These are not an OS socket-denial boundary. The configured sandbox is indeed
+`windows.sandbox="unelevated"`; tool descendants inherit the filesystem sandbox
+and JV job, but direct sockets bypass those environment conventions.
+[wfp.rs](https://github.com/openai/codex/blob/rust-v0.149.1/codex-rs/windows-sandbox-rs/src/wfp.rs)
+documents an already-elevated setup helper and installs persistent user-matched
+WFP providers, sublayers and filters. That mechanism was not invoked.
+
+A current-user dynamic WFP session opened successfully, but
+`FwpmTransactionBegin0(handle, 0)` returned **5 / access denied**. The session was
+closed; no transaction began, no filter/sublayer was added and no policy was
+committed. Thus this ordinary-user process cannot install the candidate temporary
+WFP boundary. Elevating the pinned helper would entail persistent machine policy
+and sandbox accounts, outside this pass's safe boundary.
+
+An outer capability-free AppContainer can deny networking, but applying it to the
+whole existing engine also denies the engine's required loopback adapter channel.
+Granting broad loopback access would restore the observed tool escape. The current
+shared integration owns the engine tree, not the engine's internal per-tool spawn
+boundary; no verified tool-only AppContainer hook or private non-network model
+transport has been established for this pin. This is an integration blocker, not
+a claim that Windows can never implement network isolation. No unproved wrapper,
+proxy-only restriction, global firewall change or engine upgrade was substituted.
+Crash/cancel/owner-death cleanup of a new network policy is **not accepted**:
+no enforcing policy could be installed, so there is none to test or leak.
+
+### Durable structured journal: implemented
+
+`DurableResponseState` persists `structured/state.json`: round request body and
+idempotency key before submission, then response identity and published tool
+decisions before they may be returned/executed. Success must not acknowledge
+only cached data or a rename whose namespace metadata was never flushed. POSIX
+already writes/fsyncs a temp file, renames it, then fsyncs the parent directory;
+that last operation cannot be copied as `os.O_DIRECTORY` on Windows.
+
+The Windows durable path now creates the private temporary file with native
+`FILE_WRITE_THROUGH`, completes its UTF-8 bytes, flushes it, performs the existing
+pinned-parent handle-relative atomic rename, then flushes the renamed handle.
+The same ACL, owner, reparse, hard-link and fixed-local-NTFS checks apply. Linux's
+sequence is unchanged. Microsoft documents NTFS metadata/rename flushing for
+[write-through file handles](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew)
+and the native option in [Nt/ZwCreateFile](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/nf-wdm-zwcreatefile).
+Hardware that does not honor flush/write-through remains outside a software proof.
+
+Before-rename write/flush/rename failures preserve the prior active record and
+clean the owned temporary file. A final flush failure after successful rename is
+reported as uncertain durability: the new record is complete but success is not
+acknowledged, `write_failed` is set, and callers must stop/reconcile. It is not
+rolled back or automatically replayed. A process killed before rename can leave
+an orphan temporary file; reopening reads only `state.json`, never that temp.
+
+`py -3.10 -B -m unittest discover -s tests -p test_windows_journal.py -v`:
+**11 passed**. Actual handle-mode query proves FILE_WRITE_THROUGH; native file
+operations cover UTF-8/Thai, new/replaced/reopened records, injected write/flush/
+rename failures, partial temp rejection, sequential and concurrent-reader
+replacements, process exit/reopen, and forced writer death before rename.
+Sharing contention fails explicitly rather than exposing partial JSON. These
+tests prove process/crash behavior and failure reporting, not physical power loss.
+
+The real pinned engine's structured shell-call/continuation now passes using the
+native journal. The five original engine isolation checks remain **4 pass / 1
+network failure**. The bridge acceptance driver stays nonzero and still requires
+full public lifecycle/workspace acceptance in a later milestone.
+
+Final local gates: `py -3.10 -B scripts/windows_preflight.py` passed 91 tests and
+compiled 76 Python files; `py -3.10 -B scripts/windows_native_tests.py` passed
+181 tests, zero skips (previous 170 + 11 journal tests). Manifest regeneration
+used `manage.write_manifest(Path.cwd())`; `py -3.10 -B scripts/manage.py verify`
+verified 121 source/documentation files. The loopback network investigation and
+real-engine acceptance gates intentionally exit 1; they are not green CI claims.
+
 ## Auth deadline checkpoint and sandbox blocker — 2026-10-01
 
 Started from clean local/fetched origin

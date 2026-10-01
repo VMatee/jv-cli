@@ -41,6 +41,10 @@ def atomic_write(path, text, mode=0o600):
     return _filesystem().atomic_write(path, text, mode)
 
 
+def durable_atomic_write(path, text):
+    return _filesystem().atomic_write(path, text, durable=True)
+
+
 def open_private_read(path):
     return _filesystem().open_private_read(path)
 

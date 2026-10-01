@@ -13,7 +13,7 @@ import tempfile
 import unittest
 
 import windows_preflight
-from engine_smoke import run_case
+from engine_smoke import run_case, run_structured_case
 from jvcli.platform import windows
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -61,6 +61,12 @@ def engine_checks(engine):
                 results['network_denied'] = False
             except socket.timeout:
                 pass
+            try:
+                state = windows.private_dir(root / 'structured-journal')
+                run_structured_case(engine, state, "Write-Output 'STRUCTURED_NATIVE_OK'", 'STRUCTURED_NATIVE_OK')
+                results['structured_journal'] = True
+            except Exception:
+                results['structured_journal'] = False
         finally:
             os.chdir(old)
             listener.close()
@@ -83,6 +89,7 @@ def main():
         ('pipes/dispatch', ('test_windows_pipes',)),
         ('auth deadlines', ('test_windows_auth',)),
         ('pinned grammar', ('test_windows_grammar',)),
+        ('journal durability', ('test_windows_journal',)),
     ):
         result = unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.loadTestsFromNames(names))
         ok = result.wasSuccessful() and not result.skipped
@@ -91,7 +98,7 @@ def main():
     passed &= engine_checks(args.engine)
     # Explicitly fail until real public sessions and all lifecycle/containment
     # tests exist. Passing primitive tests can never promote an incomplete gate.
-    print('FAIL: public bridge lifecycle, native workspace containment and durable structured journal acceptance remain incomplete')
+    print('FAIL: public bridge lifecycle and native workspace containment acceptance remain incomplete')
     return 1
 
 

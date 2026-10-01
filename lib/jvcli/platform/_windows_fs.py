@@ -106,7 +106,7 @@ def ntcheck(status):
 
 
 def relative_open(parent, name, *, directory=False, creation=1,
-                  access=0x20081, share=3, sa=None):
+                  access=0x20081, share=3, sa=None, write_through=False):
     # A single lexical component: no Win32 normalization or intermediate reparse.
     if not name or any(c in name for c in "\\/:\x00") or name in {".", ".."}:
         raise JvError("Unsafe relative Windows state name")
@@ -118,7 +118,7 @@ def relative_open(parent, name, *, directory=False, creation=1,
     handle, io = W.HANDLE(), IoStatus()
     ntcheck(_ntcreate(C.byref(handle), access | 0x100000, C.byref(attrs), C.byref(io),
                       None, 0, share, creation,
-                      0x200020 | (1 if directory else 0x40), None, 0))
+                      0x200020 | (1 if directory else 0x40) | (2 if write_through else 0), None, 0))
     return handle.value, io.information
 
 
@@ -390,7 +390,7 @@ def open_public_read(path):
             raise
 
 
-def atomic_write(path, text, mode=0o600):
+def atomic_write(path, text, mode=0o600, *, durable=False):
     if mode not in (0o600, 0o644):
         raise JvError("Unsupported Windows file ACL policy")
     public = mode == 0o644
@@ -417,7 +417,8 @@ def atomic_write(path, text, mode=0o600):
                 _close(target)
         with descriptor(public=public) as sa:
             handle, _ = relative_open(parents[-1], ".jv-write-" + uuid.uuid4().hex,
-                                      access=0xC0030000, share=0, creation=2, sa=sa)
+                                      access=0xC0030000, share=0, creation=2, sa=sa,
+                                      write_through=durable)
         fd = None
         renamed = False
         try:
@@ -435,6 +436,11 @@ def atomic_write(path, text, mode=0o600):
             os.fsync(fd)
             rename_file(handle, parents[-1], path.name)
             renamed = True
+            if durable:
+                # NTFS write-through applies to the handle's rename metadata as
+                # well as data. Flush the renamed handle before acknowledging.
+                # Failure here is uncertain durability, never success or rollback.
+                os.fsync(fd)
         finally:
             try:
                 if not renamed:
