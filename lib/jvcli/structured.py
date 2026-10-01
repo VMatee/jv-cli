@@ -33,6 +33,7 @@ MAX_STATE_BYTES = 64 * 1024 * 1024
 MAX_TOOL_OUTPUT_BYTES = 80 * 1024
 MAX_CUSTOM_BYTES = 32 * 1024
 PATCH_GRAMMAR_SHA256 = 'd6367f4826ed608c424b0a308f3d6163527df63c22513d089b91863552f8bfeb'
+WINDOWS_PATCH_GRAMMAR_SHA256 = 'ce2574fac05867f519a0ce3bdae50ce7d68b6d2e5f68d3c0c7e75518142d89b3'
 PATCH_DESCRIPTION = ('The `apply_patch` tool can be used to edit files. This is a FREEFORM tool, '
                      'so do not wrap the patch in JSON.')
 CALL_TYPES = ('function_call', 'custom_tool_call')
@@ -253,7 +254,9 @@ class StructuredProcessor:
                         or set(grammar) != {'type', 'syntax', 'definition'}
                         or grammar.get('type') != 'grammar' or grammar.get('syntax') != 'lark'
                         or not isinstance(grammar.get('definition'), str)
-                        or hashlib.sha256(grammar['definition'].encode()).hexdigest() != PATCH_GRAMMAR_SHA256):
+                        or hashlib.sha256(grammar['definition'].encode()).hexdigest() not in
+                        ({PATCH_GRAMMAR_SHA256, WINDOWS_PATCH_GRAMMAR_SHA256} if os.name == 'nt'
+                         else {PATCH_GRAMMAR_SHA256})):
                     raise ProtocolError('apply_patch must use the exact certified Codex 0.149.1 custom declaration and grammar')
                 result.append(json.loads(_canonical(tool)))
                 schemas['apply_patch'] = {'type': 'custom'}

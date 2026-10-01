@@ -33,7 +33,7 @@ def main():
         raise SystemExit("Run this gate on native Windows")
     suite = unittest.defaultTestLoader.loadTestsFromNames(
         (*windows_preflight.SHARED_TESTS, "test_windows_native", "test_windows_execution",
-         "test_windows_pipes"))
+         "test_windows_pipes", "test_windows_auth", "test_windows_grammar"))
     result = unittest.TextTestRunner(verbosity=2, resultclass=NativeResult).run(suite)
     if not result.wasSuccessful() or result.skipped:
         return 1

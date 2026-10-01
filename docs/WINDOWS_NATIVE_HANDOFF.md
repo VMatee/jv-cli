@@ -5,6 +5,78 @@ native Windows the same day. **Native Windows JV CLI is not functional or accept
 yet.** Private NTFS state and kernel locks now have native tests; execution and
 packaging remain blocked. Do not distribute this branch as a supported release.
 
+## Auth deadline checkpoint and sandbox blocker — 2026-10-01
+
+Started from clean local/fetched origin
+`c7cdb1d7b50959928467f107d411291a9c3743d5`, whose six CI jobs passed.
+Windows bridge auth/logout now use a disposable Job Object-owned Python helper.
+Request secrets enter through stdin; the token result uses one explicitly
+inherited anonymous result pipe, **not stdout/stderr**, argv, environment or disk.
+The helper runs the shared `JvApiClient`; it cannot access the parent's client,
+session or bridge objects. Only the calling bridge owner installs a validated
+result after child exit and joined I/O, while still within the total deadline.
+Timeout kills/waits the job, cancels the result reader, joins communication and
+closes handles. Cleanup failure makes the bridge fatal; it cannot replace auth.
+Logout drops local token ownership before attempting remote revocation. Late
+remote responses cannot install a token or clear a newer client state. Lost
+server-side login/revocation results remain uncertain and are not replayed.
+
+The source helper requires a Python executable satisfying the existing executable
+ACL policy; tests stage only Python binaries in a disposable trusted directory.
+An untrusted development Python installation fails closed. A final packaged
+runtime strategy is outside this bridge pass. The helper does not use shell
+execution, ambient proxy/config, multiprocessing pickle or asynchronous exception
+injection. Linux still uses the existing main-thread signal deadline.
+
+`py -3.10 -B -m unittest discover -s tests -p test_windows_auth.py -v`:
+7 passed with real child processes and a loopback HTTP fixture. Covers successful
+login/logout, late server responses after timeout, repeated timeout, newer-token
+preservation, deterministic bridge recovery, request IDs, queued shutdown during
+auth in a subprocess, no surviving workers, released handles, no secrets in child
+argv/environment, bridge output or persisted state. This does not yet prove full
+public sessions/resume/turn cancellation; the public ready/session guards remain.
+
+The real Windows 0.149.1 engine's apply_patch grammar hash is
+`ce2574fac05867f519a0ce3bdae50ce7d68b6d2e5f68d3c0c7e75518142d89b3`.
+Its 19 CRLF sequences are the only difference from the certified LF grammar:
+normalizing them yields the existing `d6367f48...` hash. Windows accepts only
+these two exact hashes, preserving the declaration and grammar; Linux still
+accepts only its original hash. `test_windows_grammar.py`: 1 passed, including
+altered-grammar rejection. No product/engine/protocol version changes.
+
+Actual engine probes use the shared runner/adapter and scripted local responses.
+Four native checks passed: workspace write, outside-workspace write denial,
+read-only write denial and absence of JV/adapter/OpenAI secret variables in the
+tool environment. **Network denial failed:** with `allow_network=False` and the
+configured unelevated sandbox, PowerShell `System.Net.Sockets.TcpClient` connected
+to an ephemeral synthetic 127.0.0.1 listener. The listener actually accepted the
+connection. Proxy environment settings are therefore not sufficient enforcement.
+No external inference/service was contacted. No admin account, firewall rule,
+elevated sandbox setup or normal-user engine configuration was changed.
+
+This is a security stop condition: do not enable public sessions or claim offline
+bridge acceptance while the pinned sandbox permits forbidden networking. A secure
+Windows network-denial design must be proved without weakening the contract;
+switching to elevated setup is not a proven fix. Current upstream guidance:
+[Windows sandbox](https://learn.chatgpt.com/docs/windows/windows-sandbox).
+Separately, structured mode reached a POSIX-only `os.O_DIRECTORY` + directory
+`fsync` in `DurableResponseState._write`. Its crash/reconciliation durability
+guarantee needs a native implementation; it was not removed or silently bypassed.
+
+Authoritative development driver:
+`py -3.10 -B scripts/windows_bridge_acceptance.py --engine <verified codex.exe>`.
+It runs separate shared/storage/execution/pipe/auth/grammar categories, rejects
+skips, runs the five real-engine checks, and exits **1** for the network failure
+and incomplete public lifecycle/containment/durable-journal gates. It must not be
+treated as green primitive CI. No installer or package work was started.
+
+Final checkpoint commands: `py -3.10 -B scripts/windows_preflight.py` passed
+91 tests (74 Python files compiled); `py -3.10 -B scripts/windows_native_tests.py`
+passed 170, zero skips: 91 shared + 37 ACL/filesystem + 18 execution + 16 pipe/
+dispatch + 7 auth/lifecycle + 1 grammar. `py -3.10 -B scripts/manage.py verify`
+verified 119 shipped files. The engine acceptance driver is deliberately red,
+with 4/5 real tool-isolation checks passing; full public bridge remains blocked.
+
 ## Native pipe continuation — 2026-10-01
 
 Published execution checkpoint `0c6898b300bb3622558a3344ef07962d7f6340fa` normally

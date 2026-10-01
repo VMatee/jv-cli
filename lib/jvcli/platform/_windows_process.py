@@ -73,7 +73,7 @@ class OwnedProcess:
     No suspended child can escape between creation and assignment: JOB_LIST is
     an atomic process-creation attribute. Unsupported hosts fail before execution.
     """
-    def __init__(self, command, env):
+    def __init__(self, command, env, *, inherited_handles=()):
         self.args = list(command)
         self.returncode = None
         self._done = threading.Event()
@@ -118,7 +118,7 @@ class OwnedProcess:
             attributes = C.create_string_buffer(size.value)
             check(initialize_attrs(attributes, 2, 0, C.byref(size)))
             attributes_ready = True
-            inherited = (W.HANDLE * 3)(*children)
+            inherited = (W.HANDLE * (3 + len(inherited_handles)))(*children, *inherited_handles)
             jobs = (W.HANDLE * 1)(job)
             check(update_attr(attributes, 0, 0x20002, inherited, C.sizeof(inherited), None, None))
             check(update_attr(attributes, 0, 0x2000D, jobs, C.sizeof(jobs), None, None))

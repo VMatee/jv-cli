@@ -7,6 +7,7 @@ No request changes cwd, the engine, environment, or the server protocol.
 from __future__ import annotations
 
 import contextlib
+import os
 from pathlib import Path
 import queue
 import re
@@ -177,10 +178,18 @@ class Bridge:
         self.account = None
         if client:
             try:
-                with deadline(LOGOUT_TIMEOUT):
-                    client.logout()
-            except Exception:
-                pass
+                if os.name == 'nt':
+                    from .platform._windows_auth import operation
+                    operation(client, 'logout', LOGOUT_TIMEOUT, OperationTimeout,
+                              root=cli.STATE_DIR / 'bridge-auth')
+                else:
+                    with deadline(LOGOUT_TIMEOUT):
+                        client.logout()
+            except Exception as exc:
+                if os.name == 'nt':
+                    from .platform._windows_auth import AuthCleanupError
+                    if isinstance(exc, AuthCleanupError):
+                        self.fatal = self.stopping = True
             finally:
                 # Local token ownership ends even if server revocation is unavailable.
                 client._token = None
@@ -203,13 +212,25 @@ class Bridge:
                 except JvError:
                     raise RequestError('invalid_request') from None
                 self.logout()
+                if self.fatal:
+                    raise RequestError('internal_error')
                 password = request.pop('password')
                 try:
                     cli._ensure_state()
                     self.client = self.client_factory(base)
-                    with deadline(AUTH_TIMEOUT):
-                        self.client.login(request['username'].strip(), password)
-                except Exception:
+                    if os.name == 'nt':
+                        from .platform._windows_auth import operation
+                        operation(self.client, 'login', AUTH_TIMEOUT, OperationTimeout,
+                                  root=cli.STATE_DIR / 'bridge-auth',
+                                  username=request['username'].strip(), password=password)
+                    else:
+                        with deadline(AUTH_TIMEOUT):
+                            self.client.login(request['username'].strip(), password)
+                except Exception as exc:
+                    if os.name == 'nt':
+                        from .platform._windows_auth import AuthCleanupError
+                        if isinstance(exc, AuthCleanupError):
+                            self.fatal = self.stopping = True
                     self.logout()
                     raise RequestError('authentication_failed') from None
                 finally:
