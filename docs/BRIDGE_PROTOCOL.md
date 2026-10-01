@@ -1,8 +1,8 @@
 # Stdio bridge protocol 1 — development contract
 
-This document describes unreleased feature-branch work, not a released CLI
-compatibility promise. Application version remains **0.4.8**; protocol version is
-independently **1**. Production acceptance has not been performed.
+JV CLI **0.4.9** introduces this Linux machine interface. Protocol version is
+independently **1**. Validation uses synthetic dependencies; production Desktop
+acceptance has not been performed.
 
 ## Invocation and isolation
 
@@ -75,7 +75,7 @@ Shutdown is accepted in every ready state. Invalid state transitions return erro
 Startup frame:
 
 ```json
-{"type":"bridge.ready","protocol":1,"cli_version":"0.4.8","workspace":"/absolute/project","capabilities":{"auth":"stdio-memory","session":true,"resume":true,"cancel":"local","images":false,"thread_new":true}}
+{"type":"bridge.ready","protocol":1,"cli_version":"0.4.9","workspace":"/absolute/project","capabilities":{"auth":"stdio-memory","session":true,"resume":true,"cancel":"local","images":false,"thread_new":true}}
 ```
 
 ### Authentication

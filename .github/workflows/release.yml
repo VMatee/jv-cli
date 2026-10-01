@@ -74,11 +74,3 @@ jobs:
           )
           gh release create "$GITHUB_REF_NAME" "${assets[@]}" --verify-tag --latest \
             --title "JV CLI $version" --notes-file "docs/releases/$version.md"
-      - name: Refresh earlier customer release notes
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          for version in 0.4.3 0.4.4; do
-            gh release edit "v$version" --title "JV CLI $version" \
-              --notes-file "docs/releases/$version.md"
-          done

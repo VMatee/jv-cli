@@ -2,7 +2,7 @@
 
 An AI coding assistant for your terminal. Ask questions about a project, make changes, run checks, and return to saved work.
 
-**Source version: 0.4.8** · [Published releases](https://github.com/VMatee/jv-cli/releases/latest) · [What's new](docs/CHANGELOG.md)
+**Source version: 0.4.9** · [Published releases](https://github.com/VMatee/jv-cli/releases/latest) · [What's new](docs/CHANGELOG.md)
 
 ## Get started
 
@@ -31,8 +31,8 @@ The installer downloads the latest release and verifies its checksum. Installati
 Prefer a manual download? Get the ZIP and matching `.sha256` file from [Releases](https://github.com/VMatee/jv-cli/releases/latest), then:
 
 ```bash
-sha256sum -c jv-cli-0.4.8-linux-x86_64.zip.sha256
-unzip jv-cli-0.4.8-linux-x86_64.zip
+sha256sum -c jv-cli-0.4.9-linux-x86_64.zip.sha256
+unzip jv-cli-0.4.9-linux-x86_64.zip
 cd jv-cli
 ./verify.sh
 ./install.sh
@@ -42,11 +42,11 @@ Stop if verification fails. The application is installed under `~/.local/share/j
 
 ### Install without downloading dependencies
 
-Download `jv-cli-0.4.8-linux-x86_64-offline.zip` and its matching `.sha256` file from [Releases](https://github.com/VMatee/jv-cli/releases/latest). Copy both files to the Linux computer, then run:
+Download `jv-cli-0.4.9-linux-x86_64-offline.zip` and its matching `.sha256` file from [Releases](https://github.com/VMatee/jv-cli/releases/latest). Copy both files to the Linux computer, then run:
 
 ```bash
-sha256sum -c jv-cli-0.4.8-linux-x86_64-offline.zip.sha256
-unzip jv-cli-0.4.8-linux-x86_64-offline.zip
+sha256sum -c jv-cli-0.4.9-linux-x86_64-offline.zip.sha256
+unzip jv-cli-0.4.9-linux-x86_64-offline.zip
 cd jv-cli
 ./verify.sh
 ./install-offline.sh
@@ -153,3 +153,11 @@ Use `jvcli uninstall --keep-state` to retain account settings and saved sessions
 ## License
 
 See [LICENSE](LICENSE), [NOTICE](NOTICE), and [third-party notices](THIRD_PARTY_NOTICES.md).
+
+## Desktop and machine integration
+
+JV CLI 0.4.9 adds `jvcli bridge --stdio`, a versioned machine NDJSON interface
+for Linux. Existing terminal commands remain compatible. Bridge authentication
+is memory-only and does not persist passwords. Image requests through the bridge
+are deferred; terminal image support is unchanged. Integration developers should
+read [the protocol contract](docs/BRIDGE_PROTOCOL.md).

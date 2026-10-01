@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.9 — machine stdio bridge
+
+Adds the Linux `jvcli bridge --stdio` NDJSON interface with memory-only bridge
+authentication. Existing terminal interfaces remain compatible. Bridge images
+remain deferred.
+
 ## 0.4.8 — offline installation package
 
 - Add a Linux x86_64 offline ZIP containing JV CLI source, the pinned agent engine, and Node.js.

@@ -125,7 +125,7 @@ class BridgeTests(unittest.TestCase):
         ready = p.read()
         self.assertEqual(ready['type'], 'bridge.ready')
         self.assertEqual(ready['protocol'], 1)
-        self.assertEqual(ready['cli_version'], '0.4.8')
+        self.assertEqual(ready['cli_version'], cli.VERSION)
         self.assertEqual(ready['workspace'], str(p.workspace))
         return p
 
