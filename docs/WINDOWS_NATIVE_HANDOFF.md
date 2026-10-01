@@ -7,6 +7,74 @@ packaging remain blocked. Do not distribute this branch as a supported release.
 
 ## Public-file policy continuation — 2026-10-01
 
+### Native execution primitives
+
+The next checkpoint adds `_windows_engine.py` and `_windows_process.py` behind
+the existing Windows backend. Discovery validates AMD64 PE32+ executable headers,
+the exact pinned `codex-package.json`, and required native helpers. It supports
+the npm alias package layout and explicit native paths; `.cmd` shims are rejected.
+The package is `@openai/codex@0.149.1-win32-x64`, resolved by the wrapper dependency
+alias `@openai/codex-win32-x64`. Its entrypoint is
+`vendor/x86_64-pc-windows-msvc/bin/codex.exe`; helpers live in `codex-resources`,
+and ripgrep in `codex-path`. No Node shim is needed for the tested version query.
+Both upstream archives were downloaded only into ignored repository downloads
+and verified against registry SHA-512 integrity before safe member extraction.
+Native archive SHA-256:
+`513bde2e7a1fe31e9b7ab2c9ec1dc87e54eb93d3adc5ae579452a7f0c09e9ed2`.
+Wrapper archive SHA-256:
+`1616304fd7883b46d8887cf336496e2ae0cdf9a637b7bdf8824baa98c22c5b7b`.
+These are development inputs, not Windows release artifacts or a completed
+runtime supply-chain/installation verifier.
+
+Windows environments now derive the system directory through the native API,
+use a fixed system PATH, and create isolated HOME/USERPROFILE/APPDATA/LOCALAPPDATA,
+TEMP/TMP and CODEX_HOME. Arbitrary parent variables are not copied. The trusted
+engine still receives the explicit in-memory local adapter key required by the
+shared adapter protocol; tools use `inherit = "none"` and an explicit environment
+without that key. Tool CODEX_HOME is separate from engine configuration. Actual
+pinned-engine tool environment isolation remains to be proved with scripted tools.
+Windows config disables login shells and selects the unelevated sandbox candidate;
+no sandbox setup, local-account creation, firewall changes, or tool execution has
+been performed by these checks. Current official configuration guidance is at
+[Windows sandbox](https://learn.chatgpt.com/docs/windows/windows-sandbox) and
+[configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference);
+current documentation alone does not establish pinned-engine sandbox acceptance.
+
+Process creation uses `CreateProcessW` with explicit argv quoting, an explicit
+environment, inherited stdin/stdout/stderr handles only, and an atomic
+`PROC_THREAD_ATTRIBUTE_JOB_LIST` assignment. Each unnamed, non-inherited Job Object
+has kill-on-close and no breakaway. A reaper closes the job after engine exit,
+terminating orphaned descendants and releasing their pipe handles. Owner death
+also closes the job. Unknown process objects cannot be cancelled. Diagnostic
+capture is bounded to 128 KiB per stream. Prompt data stays on stdin. Reference:
+[process creation attributes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute).
+
+Validation commands, all using `py -3.10 -B`:
+
+| Command suffix | Result |
+| --- | --- |
+| `-m unittest discover -s tests -p test_windows_execution.py -v` | 18 native execution/discovery/environment tests passed |
+| `scripts/windows_preflight.py` | 91 shared tests passed; 64 Python files compiled |
+| `scripts/windows_native_tests.py` | 146 passed, zero skips: 91 shared + 37 native storage + 18 native execution |
+| `scripts/windows_engine_check.py --engine <verified native bin/codex.exe>` | 2 real pinned-engine checks passed: package/AMD64 validation and owned isolated version query |
+
+Execution tests exercise native jobs, child/grandchild termination, unrelated
+sentinel survival, engine-parent exit, owner-process death, denied breakaway,
+failed-creation handle counts, timeout cleanup, bounded diagnostic output, Unicode
+stdin, and the shared runner's hung-input deadline. Synthetic PE fixtures exercise
+package discovery and version/architecture rejection; the separate engine check
+uses the actual downloaded executable. Development Python's original directory
+failed the executable ACL policy, so tests copy only Python binaries into a
+disposable repository directory rather than relaxing the ACL check.
+
+Public Windows sessions now explicitly fail before authentication while sandbox
+and workspace acceptance is unfinished. Bridge ready remains blocked. Remaining
+gates: real-engine scripted tool isolation and filesystem/network sandbox tests;
+Windows bridge pipes and auth/logout deadlines; workspace/image/download safety;
+console/Thai IME; per-user installation, rollback, launcher and Windows artifacts.
+No Windows bridge or installed-package acceptance is claimed. Linux behavior and
+pins remain unchanged; shared-code Windows branches are conditional on `os.name`.
+
 Published the two existing commits through the configured repository deploy-key
 remote, then fetched and verified local/origin both equal
 `d2ca75d00b3b8c9e9a225510a847a81b0e1735ec`. The previous publication failure is

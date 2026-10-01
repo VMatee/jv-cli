@@ -96,9 +96,7 @@ class PlatformContracts(unittest.TestCase):
                 stack.enter_context(patch.object(os, name, side_effect=AssertionError("OS mutation")))
             stack.enter_context(patch.object(cli.subprocess, "Popen", side_effect=AssertionError("spawn")))
             calls = (
-                lambda: windows.find_engine(ROOT, "codex.cmd"),
-                lambda: windows.spawn_engine(["codex.exe", "exec", "-"], {}),
-                lambda: windows.stop_process(object()), lambda: windows.require_terminal(),
+                lambda: windows.require_terminal(),
                 lambda: windows.require_bridge_io(),
             )
             for operation in calls:

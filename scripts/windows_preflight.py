@@ -42,7 +42,7 @@ def main():
         name = ".".join(parts)
         if name == "jvcli.platform.posix" and os.name == "nt":
             continue  # This module deliberately implements only the POSIX OS.
-        if name == "jvcli.platform._windows_fs" and os.name != "nt":
+        if name.startswith("jvcli.platform._windows_") and os.name != "nt":
             continue  # Real Windows API bindings; public backend remains importable.
         importlib.import_module(name)
     importlib.import_module("manage")

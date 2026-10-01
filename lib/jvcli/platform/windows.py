@@ -58,18 +58,39 @@ def close_lock(handle):
 
 
 def find_engine(runtime, explicit=None):
-    """Discover a verified native executable/argv launcher, never a shell shim."""
-    unavailable("engine discovery")
+    _filesystem()
+    from . import _windows_engine
+    return _windows_engine.find_engine(runtime, explicit)
 
 
 def spawn_engine(command, env):
-    """Argv spawn, UTF-8 pipes, prompt on stdin, owned child-tree containment."""
-    unavailable("owned process creation")
+    _filesystem()
+    from . import _windows_process
+    return _windows_process.spawn_engine(command, env)
 
 
 def stop_process(process):
-    """Bounded cleanup of the owned local tree, including orphaned children."""
-    unavailable("owned process-tree cancellation")
+    _filesystem()
+    from . import _windows_process
+    return _windows_process.stop_process(process)
+
+
+def minimal_env():
+    _filesystem()
+    from . import _windows_engine
+    return _windows_engine.minimal_env()
+
+
+def isolated_env(root, *, adapter_key=None):
+    _filesystem()
+    from . import _windows_engine
+    return _windows_engine.isolated_env(root, adapter_key=adapter_key)
+
+
+def tool_environment(root):
+    _filesystem()
+    from . import _windows_engine
+    return _windows_engine.tool_environment(root)
 
 
 def require_terminal():

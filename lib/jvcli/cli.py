@@ -191,6 +191,12 @@ def _find_engine():
 
 def _version_of_engine(engine):
     try:
+        if os.name == "nt":
+            process = get_backend().spawn_engine([engine, "--version"], _diagnostic_env())
+            output, _ = process.communicate(timeout=10)
+            if process.returncode or output.strip() != f"codex-cli {ENGINE_VERSION}":
+                raise JvError("Agent engine does not match the pinned version")
+            return ENGINE_VERSION
         result = subprocess.run(
             [engine, "--version"],
             capture_output=True,
@@ -208,6 +214,8 @@ def _version_of_engine(engine):
 
 
 def _minimal_env():
+    if os.name == "nt":
+        return get_backend().minimal_env()
     keep = (
         "PATH",
         "LANG",
@@ -227,6 +235,8 @@ def _minimal_env():
 
 
 def _diagnostic_env():
+    if os.name == "nt":
+        return get_backend().isolated_env(STATE_DIR / "diagnostics")
     env = _minimal_env()
     home = private_dir(STATE_DIR / "diagnostics" / "home")
     engine = private_dir(STATE_DIR / "diagnostics" / "engine")
@@ -362,6 +372,10 @@ def _write_engine_config(
             },
         },
     }
+    if os.name == "nt":
+        config["shell_environment_policy"] = get_backend().tool_environment(session_dir)
+        config["allow_login_shell"] = False
+        config["windows"] = {"sandbox": "unelevated"}
     atomic_write(
         engine_home / "config.toml",
         "# Managed by JV CLI; no password or token stored here.\n"
@@ -377,6 +391,10 @@ def _write_engine_config(
 
 
 def _engine_env(session_dir=None, adapter_key=None):
+    if os.name == "nt":
+        if session_dir is None:
+            raise JvError("Windows engine requires explicit isolated state")
+        return get_backend().isolated_env(session_dir, adapter_key=adapter_key)
     env = _minimal_env()
     if session_dir:
         env.update(
@@ -833,6 +851,8 @@ def _session_runtime(
     images=(),
     account=None,
 ):
+    if os.name == "nt":
+        get_backend().unavailable("session sandbox and workspace acceptance")
     workspace = _workspace_check(Path.cwd())
     if allow_network is None:
         allow_network = not read_only
