@@ -1,5 +1,105 @@
 # JV CLI Windows native development handoff
 
+## Valid direct sandbox investigation — 2026-10-01
+
+Started clean at local/fetched origin `bbda38a2e7988fe25a71e455220ab952ab9e3d23`.
+Diagnosis only; production code and readiness guards are unchanged.
+**Root cause: pinned Codex 0.149.1 restricted-token limitation.** The previous
+direct invocation missing required JSON is not evidence and was not used.
+
+Exact pinned source was inspected from `rust-v0.149.1` in ignored downloads:
+
+- [SandboxState schema](https://github.com/openai/codex/blob/rust-v0.149.1/codex-rs/codex-mcp/src/runtime.rs#L513): camelCase outer fields.
+- [PermissionProfile schema](https://github.com/openai/codex/blob/rust-v0.149.1/codex-rs/protocol/src/models.rs#L407): tagged managed profile, snake_case fields.
+- [Direct flag handling](https://github.com/openai/codex/blob/rust-v0.149.1/codex-rs/cli/src/debug_sandbox.rs#L214): disable-network explicitly replaces profile network with `NetworkSandboxPolicy::Restricted`; cwd comes from state, workspace roots from config at that cwd.
+- [Windows backend selection](https://github.com/openai/codex/blob/rust-v0.149.1/codex-rs/core/src/windows_sandbox.rs#L25): unelevated maps to RestrictedToken; elevated maps to Elevated.
+
+The actual valid JSON used this shape, replacing placeholders with absolute
+disposable paths (cwd uses a native file URI; filesystem entries use Windows paths):
+
+```json
+{
+  "permissionProfile": {
+    "type": "managed",
+    "file_system": {
+      "type": "restricted",
+      "entries": [
+        {"path": {"type": "special", "value": {"kind": "root"}}, "access": "read"},
+        {"path": {"type": "path", "path": "<workspace>"}, "access": "write"},
+        {"path": {"type": "path", "path": "<private TEMP>"}, "access": "write"},
+        {"path": {"type": "path", "path": "<private USERPROFILE>"}, "access": "write"}
+      ]
+    },
+    "network": "enabled"
+  },
+  "codexLinuxSandboxExe": null,
+  "sandboxCwd": "file:///C:/.../private/workspace",
+  "useLegacyLandlock": false
+}
+```
+
+Direct argv through `windows.spawn_engine`, without a shell wrapper:
+`[codex.exe, sandbox, -c, windows.sandbox="unelevated", --sandbox-state-json,
+json.dumps(state), --sandbox-state-disable-network, --, client.exe, ...]`.
+Allow controls omit only the disable-network flag. No extra readable-root flag
+is needed because root reads are explicit. Client arguments contain only static
+socket diagnostic code and synthetic loopback addresses/ephemeral ports; no
+prompt, model call, account or API is involved. Environment/state are disposable.
+
+An automated Python harness owns each listener, launches the engine in the JV
+Job Object, queries the accepted socket's TCP owner PID, checks membership of
+that exact job, acknowledges the client, collects exit/stdout/stderr, joins the
+listener, closes handles, stops the job and removes temporary state. No manual
+terminal coordination was needed. Local ignored evidence is retained in
+`downloads/direct_network_probe.py` and `downloads/direct_network_results.jsonl`.
+Command: `py -3.10 -B downloads/direct_network_probe.py`. This diagnostic records
+observations; its successful execution is not an acceptance pass.
+
+| Backend/policy | PowerShell IPv4 / IPv6 | Python IPv4 / IPv6 | Node IPv4 / IPv6 |
+| --- | --- | --- | --- |
+| Unelevated, disable-network | CONNECTED / CONNECTED | CONNECTED / CONNECTED | CONNECTED / CONNECTED |
+| Unelevated, enabled control | CONNECTED / CONNECTED | CONNECTED / CONNECTED | CONNECTED / CONNECTED |
+| Elevated, denied or allowed | Not invoked | Not invoked | Not invoked |
+
+All 12 listeners actually received connections; all clients exited 0, printed
+`CONNECTED`, had empty stderr and belonged to the JV-owned job. Six actual denial
+violations, six working controls, zero skipped unelevated cases. An initial
+fixture omitted writable TEMP/USERPROFILE and PowerShell failed in constrained
+language in both deny/allow controls; that was not counted as denial. Aligning
+private writable roots with JV's configuration produced the matrix above.
+
+**Does JV request the same Restricted policy? Yes.** `_write_engine_config`
+sets workspace-write, `sandbox_workspace_write.network_access=false` and
+`windows.sandbox="unelevated"`. Pinned
+[config conversion](https://github.com/openai/codex/blob/rust-v0.149.1/codex-rs/config/src/config_toml.rs#L765)
+and [built-in profile mapping](https://github.com/openai/codex/blob/rust-v0.149.1/codex-rs/core/src/config/permissions.rs#L71)
+map false to exactly `NetworkSandboxPolicy::Restricted`. The direct Windows
+launcher reaches the same legacy spawn preparation and environment-only network
+response discussed below. No JV sandbox-state integration fix is justified.
+
+Elevated mode was not invoked: fresh isolated CODEX_HOME has no provisioning
+marker/identity. Pinned
+[identity.rs](https://github.com/openai/codex/blob/rust-v0.149.1/codex-rs/windows-sandbox-rs/src/identity.rs#L177)
+can automatically request elevated setup when absent/mismatched, and always
+refreshes ACLs even when provisioned. We did not inspect private user credentials
+or reuse their normal Codex home. The
+[setup launcher](https://github.com/openai/codex/blob/rust-v0.149.1/codex-rs/windows-sandbox-rs/src/setup.rs#L964)
+uses ShellExecuteExW with `runas` when elevation is needed. The
+[setup helper](https://github.com/openai/codex/blob/rust-v0.149.1/codex-rs/windows-sandbox-rs/src/bin/setup_main/win.rs#L756)
+provisions/hides sandbox accounts and a group, changes persistent ACLs, and
+configures offline-account firewall/WFP policy. WFP provider/sublayer/filter flags
+are persistent. This is not an ordinary-user temporary Job Object setting.
+Elevated socket denial remains unproven here; source presence is not acceptance,
+especially because WFP errors can be nonfatal to setup.
+
+No UAC, service, account, firewall rule/profile or WFP filter was created/changed.
+For intended unprovisioned non-admin usage, `allow_network=False` cannot currently
+be guaranteed. Preserve public fail-closed guards; do not silently select elevated
+mode or reinterpret loopback as allowed. No production code changed, so unchanged
+historical broad gates were not rerun. No production auth/credentials/jobs,
+external inference, installer, Desktop, version/pin/protocol, main, tag or release
+work occurred. The network acceptance gate remains failing.
+
 This engineering handoff was prepared on Linux on 2026-10-01 and continued on
 native Windows the same day. **Native Windows JV CLI is not functional or accepted
 yet.** Private NTFS state and kernel locks now have native tests; execution and
