@@ -85,6 +85,7 @@ class NativeWindowsState(unittest.TestCase):
     def test_kernel_denies_read_to_restricted_token(self):
         path = self.private / "file"
         windows.atomic_write(path, "synthetic")
+        windows.atomic_write(self.private / "public", "public", mode=0o644)
         class SidAttributes(C.Structure):
             _fields_ = [("sid", fs.P), ("attributes", fs.D)]
         convert = fs._api(fs.A, "ConvertStringSidToSidW", fs.W.BOOL,
@@ -106,6 +107,10 @@ class NativeWindowsState(unittest.TestCase):
                 try:
                     with self.assertRaises(PermissionError):
                         fs.relative_open(parents[-1], path.name, access=0x80000000)
+                    readable, _ = fs.relative_open(parents[-1], "public", access=0x80000000)
+                    fs._close(readable)
+                    with self.assertRaises(PermissionError):
+                        fs.relative_open(parents[-1], "public", access=0x40000000)
                 finally:
                     fs._check(revert())
         finally:
@@ -252,9 +257,70 @@ class NativeWindowsState(unittest.TestCase):
             with self.subTest(path=path), self.assertRaises(JvError):
                 windows.atomic_write(path, "synthetic")
 
-    def test_public_mode_not_silently_treated_as_private(self):
-        with self.assertRaisesRegex(JvError, "public-file ACL"):
+    def test_public_mode_is_not_admitted_as_private(self):
+        path = self.private / "manifest"
+        windows.atomic_write(path, "public", mode=0o644)
+        with self.assertRaises(JvError):
+            windows.open_private_read(path)
+        with self.assertRaises(JvError):
+            windows.atomic_write(path, "private")
+
+    def test_public_file_new_and_replacement_in_inherited_parent(self):
+        path = self.root / "manifest"
+        windows.atomic_write(path, "first", mode=0o644)
+        windows.atomic_write(path, "second", mode=0o644)
+        fd = fs.open_public_read(path)
+        with os.fdopen(fd, "rb") as stream:
+            self.assertEqual(stream.read(), b"second")
+
+    def test_public_file_accepts_existing_trusted_inherited_acl(self):
+        path = self.root / "manifest"
+        path.write_text("first")
+        windows.atomic_write(path, "second", mode=0o644)
+        self.assertEqual(path.read_text(), "second")
+
+    def test_public_file_rejects_untrusted_write_grants(self):
+        path = self.root / "manifest"
+        path.write_text("first")
+        self.set_acl(path, f"D:P(A;;FA;;;{fs.user_sid()})(A;;FA;;;SY)(A;;FW;;;WD)")
+        with self.assertRaises(JvError):
+            windows.atomic_write(path, "second", mode=0o644)
+        with self.assertRaises(JvError):
+            fs.open_public_read(path)
+        self.assertEqual(path.read_text(), "first")
+
+    def test_public_file_rejects_writable_parent(self):
+        self.set_acl(self.private, f"D:P(A;OICI;FA;;;{fs.user_sid()})(A;OICI;FA;;;SY)(A;;FW;;;WD)")
+        with self.assertRaises(JvError):
             windows.atomic_write(self.private / "manifest", "public", mode=0o644)
+        self.assertEqual(list(self.private.iterdir()), [])
+
+    def test_public_file_rejects_hardlink_and_junction(self):
+        path = self.private / "manifest"
+        windows.atomic_write(path, "first", mode=0o644)
+        os.link(path, self.private / "alias")
+        with self.assertRaises(JvError):
+            windows.atomic_write(path, "second", mode=0o644)
+        junction = self.root / "junction"
+        _winapi.CreateJunction(str(self.private), str(junction))
+        try:
+            with self.assertRaises(JvError):
+                windows.atomic_write(junction / "other", "public", mode=0o644)
+        finally:
+            junction.rmdir()
+
+    def test_public_file_failure_preserves_original(self):
+        path = self.root / "manifest"
+        windows.atomic_write(path, "first", mode=0o644)
+        with patch.object(fs, "rename_file", side_effect=OSError("synthetic failure")):
+            with self.assertRaises(OSError):
+                windows.atomic_write(path, "second", mode=0o644)
+        self.assertEqual(path.read_text(), "first")
+        self.assertFalse(list(self.root.glob(".jv-write-*")))
+
+    def test_unsupported_file_mode_is_rejected(self):
+        with self.assertRaises(JvError):
+            windows.atomic_write(self.root / "manifest", "public", mode=0o666)
 
     def test_write_failure_preserves_old_file_and_cleans_temporary(self):
         path = self.private / "file"

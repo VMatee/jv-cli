@@ -170,11 +170,12 @@ def user_sid():
 
 
 @contextlib.contextmanager
-def descriptor(directory=False):
+def descriptor(directory=False, *, public=False):
     sid = user_sid()
     flags = "OICI" if directory else ""
     sd = P()
-    _check(_sddl(f"O:{sid}D:P(A;{flags};FA;;;{sid})(A;{flags};FA;;;SY)",
+    readers = "(A;;FR;;;WD)" if public else ""
+    _check(_sddl(f"O:{sid}D:P(A;{flags};FA;;;{sid})(A;{flags};FA;;;SY){readers}",
                  1, C.byref(sd), None))
     try:
         yield SecurityAttributes(C.sizeof(SecurityAttributes), sd, False)
@@ -222,6 +223,39 @@ def inspect(handle, *, directory=False, private=False):
         finally:
             _free(sd)
     return info
+
+
+def inspect_public(handle, *, directory=False):
+    """Public bytes may be readable, but only the user/system/admin may modify.
+
+    Existing inherited ACLs are permitted when their effective grants satisfy
+    this policy. Unknown ACE types fail closed. No ACL is silently repaired.
+    """
+    inspect(handle, directory=directory)
+    owner, acl, sd = P(), P(), P()
+    result = _security(handle, 1, 5, C.byref(owner), None, C.byref(acl), None, C.byref(sd))
+    if result:
+        raise C.WinError(result)
+    try:
+        trusted = {user_sid(), "S-1-5-18", "S-1-5-32-544"}
+        if not owner or sid_text(owner) not in trusted or not acl:
+            raise JvError("Windows public files require trusted ownership and a DACL")
+        entries = C.cast(acl, C.POINTER(Acl)).contents
+        for index in range(entries.count):
+            ace = P()
+            _check(_ace(acl, index, C.byref(ace)))
+            header = C.string_at(ace, 4)
+            if header[0] not in (0, 1) or header[1] & ~0x1F:
+                raise JvError("Windows public file has an unsupported ACL")
+            if header[0] == 1 or header[1] & 8:  # deny / inherit-only
+                continue
+            mask = D.from_address(ace.value + 4).value
+            # FILE_GENERIC_READ | FILE_GENERIC_EXECUTE. Unknown/generic rights
+            # are rejected rather than guessed; queried filesystem masks map them.
+            if sid_text(ace.value + 8) not in trusted and mask & ~0x1200A9:
+                raise JvError("Windows public files must not grant untrusted write access")
+    finally:
+        _free(sd)
 
 
 def native_path(path):
@@ -343,26 +377,54 @@ def open_private_read(path):
             raise
 
 
-def atomic_write(path, text, mode=0o600):
-    if mode != 0o600:
-        raise JvError("Windows public-file ACL policy is not implemented")
+def open_public_read(path):
     path = native_path(path)
-    private_dir(path.parent)
     with ancestors(path) as parents:
-        inspect(parents[-1], directory=True, private=True)
+        inspect_public(parents[-1], directory=True)
+        handle, _ = relative_open(parents[-1], path.name, access=0x80020000, share=1)
         try:
-            target = _file(parents[-1], path.name)
+            inspect_public(handle)
+            return msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+        except BaseException:
+            _close(handle)
+            raise
+
+
+def atomic_write(path, text, mode=0o600):
+    if mode not in (0o600, 0o644):
+        raise JvError("Unsupported Windows file ACL policy")
+    public = mode == 0o644
+    path = native_path(path)
+    if not public:
+        private_dir(path.parent)
+    with ancestors(path) as parents:
+        if public:
+            inspect_public(parents[-1], directory=True)
+        else:
+            inspect(parents[-1], directory=True, private=True)
+        try:
+            if public:
+                target, _ = relative_open(parents[-1], path.name)
+            else:
+                target = _file(parents[-1], path.name)
         except FileNotFoundError:
             pass
         else:
-            _close(target)
-        with descriptor() as sa:
+            try:
+                if public:
+                    inspect_public(target)
+            finally:
+                _close(target)
+        with descriptor(public=public) as sa:
             handle, _ = relative_open(parents[-1], ".jv-write-" + uuid.uuid4().hex,
                                       access=0xC0030000, share=0, creation=2, sa=sa)
         fd = None
         renamed = False
         try:
-            inspect(handle, private=True)
+            if public:
+                inspect_public(handle)
+            else:
+                inspect(handle, private=True)
             fd = msvcrt.open_osfhandle(handle, os.O_WRONLY | os.O_BINARY)
             data = text.encode("utf-8")
             while data:

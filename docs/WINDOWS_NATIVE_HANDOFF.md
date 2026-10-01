@@ -5,6 +5,31 @@ native Windows the same day. **Native Windows JV CLI is not functional or accept
 yet.** Private NTFS state and kernel locks now have native tests; execution and
 packaging remain blocked. Do not distribute this branch as a supported release.
 
+## Public-file policy continuation — 2026-10-01
+
+Published the two existing commits through the configured repository deploy-key
+remote, then fetched and verified local/origin both equal
+`d2ca75d00b3b8c9e9a225510a847a81b0e1735ec`. The previous publication failure is
+resolved. [CI run 36878979016](https://github.com/VMatee/jv-cli/actions/runs/36878979016)
+passed both Windows jobs and all four Linux Python jobs (3.10 through 3.13).
+
+`atomic_write(..., 0o644)` now creates a protected user/LocalSystem full-access
+DACL plus Everyone read access. Existing public files and their containing
+directory may have inherited ACLs, but their owner must be the user, LocalSystem,
+or Administrators, and no other effective grant may allow writes, deletion,
+permission changes, or unknown rights. Unsupported ACEs fail closed. Private
+reads/writes retain their stricter protected-DACL policy and reject public files.
+Public replacement uses the same pinned-parent, no-reparse, hard-link rejection,
+flush, rename, and cleanup implementation. It does not alter the parent ACL.
+The native `open_public_read` helper retains a verified readable handle for later
+engine/package validation. This is a filesystem primitive, not an installer.
+
+`py -3.10 -B -m unittest discover -s tests -p test_windows_native.py -v`:
+37 native tests passed. Added public new/existing/replacement cases, trusted
+inherited ACLs, unsafe parent/file write grants, junction/hard-link rejection,
+failed replacement preservation, and unsupported modes. Restricted-token checks
+prove private read denial and public read-only access at the Windows kernel.
+
 ## Native Windows storage checkpoint — 2026-10-01
 
 Starting checkout: `008eb5eee246a808794ffa8e1a70f018d4965514`, clean
