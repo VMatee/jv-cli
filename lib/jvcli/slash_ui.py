@@ -13,9 +13,9 @@ import os
 import select
 import shutil
 import sys
-import termios
-import tty
 import unicodedata
+
+from .platform import get_backend
 
 
 @dataclass(frozen=True)
@@ -245,6 +245,9 @@ def read_interactive_task() -> str:
     if not (sys.stdin.isatty() and sys.stdout.isatty() and sys.stderr.isatty()):
         print("\n> ", end="", file=sys.stderr, flush=True)
         return input().strip()
+    get_backend().require_terminal()
+    import termios
+    import tty
     try:
         import readline
     except ImportError:

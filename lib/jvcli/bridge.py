@@ -31,17 +31,9 @@ class OperationTimeout(Exception):
 
 @contextlib.contextmanager
 def deadline(seconds):
-    # Linux main-thread operations only. No auth worker may outlive its owner.
-    previous = signal.getsignal(signal.SIGALRM)
-    def expired(signum, frame):
-        raise OperationTimeout()
-    signal.signal(signal.SIGALRM, expired)
-    signal.setitimer(signal.ITIMER_REAL, seconds)
-    try:
+    # No timed-out auth worker may outlive its owner on either platform.
+    with cli.get_backend().deadline(seconds, OperationTimeout):
         yield
-    finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, previous)
 
 ID = re.compile(r'[A-Za-z0-9_-]{1,100}\Z')
 ERRORS = {

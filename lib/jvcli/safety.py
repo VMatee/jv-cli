@@ -6,9 +6,10 @@ import math
 import os
 import re
 import stat
-import tempfile
 from pathlib import Path
 from typing import Any
+
+from .platform import get_backend
 
 
 class JvError(RuntimeError):
@@ -68,41 +69,21 @@ def positive_number(value: Any, name: str, maximum: float = 86400) -> float:
 
 def no_symlink_path(path: Path) -> Path:
     """Reject existing symlink components; retain a lexical absolute path."""
-    path = Path(os.path.abspath(path.expanduser()))
-    for part in (path, *path.parents):
-        if part.is_symlink():
-            raise JvError(f"Refusing a symbolic-link path: {part}")
-    return path
+    return get_backend().no_symlink_path(path)
 
 
 def private_dir(path: Path) -> Path:
-    path = no_symlink_path(path)
-    path.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if not path.is_dir():
-        raise JvError(f"Not a directory: {path}")
-    path.chmod(0o700)
-    return path
+    return get_backend().private_dir(path)
 
 
 def atomic_write(path: Path, text: str, mode: int = 0o600) -> None:
-    path = no_symlink_path(path)
-    private_dir(path.parent)
-    fd, tmp = tempfile.mkstemp(prefix=".jv-write-", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            os.fchmod(handle.fileno(), mode)
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp, path)
-    finally:
-        Path(tmp).unlink(missing_ok=True)
+    return get_backend().atomic_write(path, text, mode)
 
 
 def read_private_json(path: Path, *, max_bytes: int = 1024 * 1024) -> dict:
     path = no_symlink_path(path)
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        fd = get_backend().open_private_read(path)
     except FileNotFoundError:
         return {}
     with os.fdopen(fd, "rb") as handle:

@@ -6,7 +6,6 @@ import argparse
 from collections import deque
 import contextlib
 import datetime
-import fcntl
 import getpass
 import json
 import os
@@ -15,7 +14,6 @@ import queue
 import re
 import shlex
 import shutil
-import signal
 import subprocess
 import sys
 import threading
@@ -28,6 +26,7 @@ from .adapter import AdapterRuntime
 from .protocol import BASE_AGENT_INSTRUCTIONS, MAX_RESPONSE_REPAIRS
 from .structured import STRUCTURED_AGENT_INSTRUCTIONS
 from .agent import AgentProcessor
+from .platform import get_backend, state_directory
 from .safety import (
     JvError,
     atomic_write,
@@ -46,9 +45,7 @@ from .slash_ui import command_action, help_text, read_interactive_task, unknown_
 ENGINE_VERSION = "0.149.1"
 APP_ROOT = Path(__file__).resolve().parents[2]
 VERSION = (APP_ROOT / "VERSION").read_text(encoding="utf-8").strip()
-STATE_DIR = (
-    Path(os.environ.get("JVCLI_HOME", str(APP_ROOT / ".state"))).expanduser().absolute()
-)
+STATE_DIR = Path(state_directory(APP_ROOT))
 CONFIG_PATH = STATE_DIR / "config.json"
 LOCAL_RUNTIME = APP_ROOT / "runtime"
 
@@ -189,19 +186,7 @@ def _logout(client):
 
 
 def _find_engine():
-    explicit = os.environ.get("JVCLI_CODEX_BIN")
-    if explicit:
-        path = Path(explicit).expanduser().absolute()
-        if not path.is_file() or not os.access(path, os.X_OK):
-            raise JvError("JVCLI_CODEX_BIN does not point to an executable file")
-        return str(path)
-    for path in (
-        LOCAL_RUNTIME / "node_modules/.bin/codex",
-        LOCAL_RUNTIME / "bin/codex",
-    ):
-        if path.is_file() and os.access(path, os.X_OK):
-            return str(path)
-    return None
+    return get_backend().find_engine(LOCAL_RUNTIME, os.environ.get("JVCLI_CODEX_BIN"))
 
 
 def _version_of_engine(engine):
@@ -548,22 +533,20 @@ def _describe_item(item, started=False, verbose=False):
 
 
 def _stop_process(process):
-    # This is called on cancellation/failure, not normal completion. The
-    # parent can exit before its children, so always address the process group.
-    try:
-        os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
-    try:
-        process.wait(timeout=3)
-    except subprocess.TimeoutExpired:
-        pass
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    if process.poll() is None:
-        process.wait(timeout=3)
+    return get_backend().stop_process(process)
+
+
+def _engine_command(engine, thread_id, *, overrides=(), images=()):
+    """Shared argv construction. The prompt is accepted only by the stdin writer."""
+    command = [engine, *overrides, "exec"]
+    if thread_id:
+        command += ["resume", thread_id]
+    command += ["--json", "--skip-git-repo-check", "--ignore-rules"]
+    if not thread_id:
+        command += ["--color", "never"]
+    for image in images:
+        command += ["--image", str(image)]
+    return command + ["-"]
 
 
 def _run_engine(
@@ -594,26 +577,9 @@ def _run_engine(
             runtime.cancel.set()
         return 130, thread_id
     # Prompt travels over stdin, not process arguments or shell expansion.
-    command = [engine, *overrides, "exec"]
-    if thread_id:
-        command += ["resume", thread_id]
-    command += ["--json", "--skip-git-repo-check", "--ignore-rules"]
-    if not thread_id:
-        command += ["--color", "never"]
-    for image in images:
-        command += ["--image", str(image)]
-    command += ["-"]
-    process = subprocess.Popen(
-        command,
-        env=_engine_env(session_dir, runtime.key if runtime else None),
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        start_new_session=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        bufsize=1,
+    command = _engine_command(engine, thread_id, overrides=overrides, images=images)
+    process = get_backend().spawn_engine(
+        command, _engine_env(session_dir, runtime.key if runtime else None),
     )
     events = queue.Queue(maxsize=32)
     stderr_lines = deque(maxlen=100)
@@ -907,26 +873,23 @@ def _session_runtime(
             "Resume must use the same legacy/structured transport mode as the saved session"
         )
     private_dir(session_dir)
-    install_fd = os.open(
-        STATE_DIR / "install.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600
-    )
+    backend = get_backend()
+    install_fd = backend.open_lock(STATE_DIR / "install.lock")
     try:
-        fcntl.flock(install_fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        backend.lock_file(install_fd, shared=True)
     except BlockingIOError:
-        os.close(install_fd)
+        backend.close_lock(install_fd)
         raise JvError(
             "Installation/update is in progress; do not start a session yet"
         ) from None
     try:
-        lock_fd = os.open(
-            session_dir / "session.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600
-        )
+        lock_fd = backend.open_lock(session_dir / "session.lock")
     except BaseException:
-        os.close(install_fd)
+        backend.close_lock(install_fd)
         raise
     try:
         try:
-            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            backend.lock_file(lock_fd)
         except BlockingIOError:
             raise JvError(
                 "This JV session is already open in another terminal"
@@ -983,8 +946,8 @@ def _session_runtime(
             if account is None:
                 _logout(client)
     finally:
-        os.close(lock_fd)
-        os.close(install_fd)
+        backend.close_lock(lock_fd)
+        backend.close_lock(install_fd)
 
 
 class SessionRuntime:
@@ -1380,6 +1343,7 @@ def main(argv=None):
         if args.command == "bridge":
             if args.read_only or args.allow_network is not None or args.verbose:
                 _parser().error("Bridge policy is selected by session.start, not terminal flags")
+            get_backend().require_bridge_io()
             from .bridge import serve
             return serve()
         if args.command == "doctor":

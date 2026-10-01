@@ -19,3 +19,21 @@ jobs:
       - run: bash -n activate.sh && sh -n install.sh upgrade.sh verify.sh test.sh uninstall.sh jvcli scripts/build-release.sh scripts/install-from-github.sh
       - run: ./verify.sh
       - run: ./scripts/build-release.sh
+  windows-preflight:
+    name: Windows imports and shared contracts (native support pending)
+    runs-on: windows-2022
+    timeout-minutes: 5
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      JV_API_BASE_URL: 'http://127.0.0.1:9'
+      JV_API_USERNAME: ''
+      JV_API_PASSWORD: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile, import, version, and explicit shared test subset
+        run: python -B scripts/windows_preflight.py

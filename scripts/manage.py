@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import datetime
-import fcntl
 import hashlib
 import json
 import os
@@ -21,6 +20,7 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
 from jvcli.cli import ENGINE_VERSION, VERSION
+from jvcli.platform import get_backend
 from jvcli.safety import JvError, atomic_write, no_symlink_path, private_dir
 
 OWNED_NAMES = (".state", ".cache", "runtime", ".backups")
@@ -41,7 +41,7 @@ EXCLUDED_DIRS = {
     ".mypy_cache",
     ".audit",
 }
-EXCLUDED_FILES = {"MANIFEST.sha256", ".env", "credentials", "credentials.json"}
+EXCLUDED_FILES = {".git", "MANIFEST.sha256", ".env", "credentials", "credentials.json"}
 PATH_LINE = 'export PATH="$HOME/.local/bin:$PATH"'
 
 
@@ -55,16 +55,17 @@ def check_tree(root: Path) -> Path:
 def idle(root: Path) -> None:
     for path in (root / ".state/runs").glob("*/session.lock"):
         path = no_symlink_path(path)
-        fd = os.open(path, os.O_RDWR | os.O_NOFOLLOW)
+        backend = get_backend()
+        fd = backend.open_lock(path, create=False)
         try:
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                backend.lock_file(fd)
             except BlockingIOError:
                 raise JvError(
                     "An active JV CLI session was detected. Exit it before updating/uninstalling"
                 ) from None
         finally:
-            os.close(fd)
+            backend.close_lock(fd)
 
 
 def _excluded(relative: Path) -> bool:
@@ -268,11 +269,10 @@ def _install_engine(
     )
     for name in ("npmrc", "global-npmrc"):
         atomic_write(cache / name, "")
-    lock_fd = os.open(
-        root / ".state/install.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600
-    )
+    backend = get_backend()
+    lock_fd = backend.open_lock(root / ".state/install.lock")
     try:
-        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        backend.lock_file(lock_fd)
         idle(root)
         if no_engine:
             return
@@ -365,7 +365,7 @@ def _install_engine(
             if stage.exists():
                 shutil.rmtree(stage)
     finally:
-        os.close(lock_fd)
+        backend.close_lock(lock_fd)
 
 
 def _copy_release(source: Path, destination: Path) -> None:
@@ -518,13 +518,10 @@ def upgrade(source: Path, destination: Path) -> int:
         raise JvError("Destination is not an existing JV CLI installation")
     entries = manifest(source)
     private_dir(destination / ".state")
-    fd = os.open(
-        destination / ".state/install.lock",
-        os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW,
-        0o600,
-    )
+    backend = get_backend()
+    fd = backend.open_lock(destination / ".state/install.lock")
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        backend.lock_file(fd)
         idle(destination)
         backup = private_dir(
             destination
@@ -566,7 +563,7 @@ def upgrade(source: Path, destination: Path) -> int:
         )
         return 0
     finally:
-        os.close(fd)
+        backend.close_lock(fd)
 
 
 def uninstall(
