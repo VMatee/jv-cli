@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from windows_test_support import trusted_fixture_directory
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
@@ -25,6 +26,7 @@ class NativeWindowsState(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="staging-native-", dir=ROOT)
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        trusted_fixture_directory(self.root)
         self.private = windows.private_dir(self.root / "private")
 
     def set_acl(self, path, sddl):

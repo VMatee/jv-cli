@@ -38,7 +38,7 @@ jobs:
       - name: Compile, import, version, and explicit shared test subset
         run: python -B scripts/windows_preflight.py
   windows-native-state:
-    name: Windows native NTFS privacy and kernel locks (execution pending)
+    name: Windows native storage, jobs and pipes (acceptance pending)
     runs-on: windows-2022
     timeout-minutes: 5
     env:
@@ -53,5 +53,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Shared contracts and real native filesystem/process contention tests
+      - name: Shared contracts and native storage, process and pipe tests
         run: python -B scripts/windows_native_tests.py

@@ -5,6 +5,59 @@ native Windows the same day. **Native Windows JV CLI is not functional or accept
 yet.** Private NTFS state and kernel locks now have native tests; execution and
 packaging remain blocked. Do not distribute this branch as a supported release.
 
+## Native pipe continuation — 2026-10-01
+
+Published execution checkpoint `0c6898b300bb3622558a3344ef07962d7f6340fa` normally
+and verified the freshly fetched origin matched. The subsequent CI annotation
+checkpoint makes failing test names/exceptions available through the public Checks
+API; downloading hosted job logs returned HTTP 403 with this session's API access.
+All four Linux jobs passed for execution/annotation checkpoints. Hosted native
+tests exposed an actual fixture assumption: the runner workspace grants other
+principals write access. Disposable `staging-*` fixture roots now receive explicit
+trusted inheritable ACLs before public-file/executable tests. Product ACL policy
+was not relaxed; the checkout, installed Python and user directories are untouched.
+
+`bridge_io.py` retains one shared framing/serialization/queue implementation.
+The lazy `_windows_pipe.py` backend uses synchronous `ReadFile`/`WriteFile` workers
+with one outstanding operation each. Input reads are limited to 4096 bytes; the
+owner polls without blocking on fragmented input. Windows calls bypass CRT text
+translation, preserving UTF-8 and LF output. `CancelSynchronousIo` is repeated
+until the worker exits to cover cancellation just before syscall entry; retained
+thread handles prevent cancellation from targeting a recycled thread ID. Workers
+own pipe buffers only, not bridge/session state. A cancellation failure is fatal.
+Output keeps the shared 128 KiB frame limit, 64-frame queue, 250 ms enqueue timeout,
+and five-second write deadline. Native pipe-state queries detect idle stdout peer
+closure. Files/consoles, overlapped handles and message-mode pipes are rejected;
+the tested interface is inherited synchronous byte-stream pipes.
+
+References: [synchronous I/O cancellation](https://learn.microsoft.com/en-us/windows/win32/fileio/canceling-pending-i-o-operations)
+and [native pipe connection state](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_pipe_local_information).
+Neither reference substitutes for native execution tests.
+
+`py -3.10 -B -m unittest discover -s tests -p test_windows_pipes.py -v`:
+16 tests passed on ordinary-user Windows. Coverage includes fragmented bytes,
+Thai/Unicode, CRLF, invalid UTF-8 rejection, maximum input, oversize recovery,
+large output, EOF/final line, blocked reader/writer, bounded queue backpressure,
+write timeout, repeated cancellation races and worker/handle cleanup. A dedicated
+subprocess fixture invokes shared bridge dispatch with only workspace checking
+injected; it proves protocol-1 startup, shutdown, EOF, malformed input and idle
+broken-stdout exit over inherited pipes. Authentication is explicitly forbidden
+in this fixture. This is transport evidence, **not public bridge acceptance**.
+
+Checkpoint gates: `py -3.10 -B scripts/windows_preflight.py` passed 91 shared
+tests and compiled 68 Python files; `py -3.10 -B scripts/windows_native_tests.py`
+passed 162 with zero skips (91 shared, 37 storage, 18 execution, 16 pipe/dispatch).
+`py -3.10 -B scripts/manage.py verify` verified 113 source/documentation files.
+No Windows ZIP or installed-package test was produced by these gates.
+
+`require_bridge_io` still fails before public ready, and Windows sessions still
+fail before auth. Auth/logout deadline isolation, full lifecycle/cancellation,
+real-engine tool/sandbox acceptance, workspace/image/download containment,
+console, installer/rollback and Windows packaging remain open. In particular,
+an arbitrary synchronous auth call cannot safely acquire a deadline by abandoning
+a state-mutating Python thread or injecting an asynchronous exception. The next
+deadline layer must preserve sole state ownership and prove late-result races.
+
 ## Public-file policy continuation — 2026-10-01
 
 ### Native execution primitives

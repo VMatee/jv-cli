@@ -1,4 +1,4 @@
-"""Bounded Linux stdio transport. No network, shell, credentials or terminal UI."""
+"""Shared bounded stdio framing with native pipe operations."""
 from __future__ import annotations
 
 import json
@@ -19,6 +19,10 @@ OVERSIZE = object()
 class LineReader:
     def __init__(self, fd):
         self.fd = fd
+        self.native = None
+        if os.name == 'nt':
+            from .platform._windows_pipe import PipeWorker
+            self.native = PipeWorker(fd)
         self.pending = bytearray()
         self.discard = False
         self.eof = False
@@ -39,9 +43,14 @@ class LineReader:
                     self.pending.clear()
                     return line
                 return EOF
-            if not select.select([self.fd], [], [], .1)[0]:
-                return None
-            chunk = os.read(self.fd, 4096)
+            if self.native:
+                chunk = self.native.read()
+                if chunk is None:
+                    return None
+            else:
+                if not select.select([self.fd], [], [], .1)[0]:
+                    return None
+                chunk = os.read(self.fd, 4096)
             if not chunk:
                 self.eof = True
                 continue
@@ -68,6 +77,10 @@ class LineReader:
                 # The owner must reap turns and notice failed stdout promptly.
                 return None
 
+    def close(self):
+        if self.native:
+            self.native.close()
+
 
 class Emitter:
     """One writer; bounded queue and per-frame deadline. Failure stops the owner."""
@@ -76,8 +89,13 @@ class Emitter:
         self.queue = queue.Queue(maxsize=QUEUE_EVENTS)
         self.failed = threading.Event()
         self.closing = threading.Event()
-        self.blocking = os.get_blocking(fd)
-        os.set_blocking(fd, False)
+        self.native = None
+        if os.name == 'nt':
+            from .platform._windows_pipe import PipeWorker
+            self.native = PipeWorker(fd, writing=True)
+        else:
+            self.blocking = os.get_blocking(fd)
+            os.set_blocking(fd, False)
         self.thread = threading.Thread(target=self._write, name='bridge-writer', daemon=True)
         self.thread.start()
 
@@ -96,11 +114,15 @@ class Emitter:
             raise BrokenPipeError() from None
 
     def _write(self):
-        poll = select.poll()
-        poll.register(self.fd, select.POLLERR | select.POLLHUP | select.POLLNVAL)
+        poll = None
+        if not self.native:
+            poll = select.poll()
+            poll.register(self.fd, select.POLLERR | select.POLLHUP | select.POLLNVAL)
         try:
             while not self.failed.is_set():
-                if poll.poll(0):
+                if self.native:
+                    self.native.check_connected()
+                if poll and poll.poll(0):
                     raise BrokenPipeError()
                 try:
                     raw = self.queue.get(timeout=.1)
@@ -113,12 +135,15 @@ class Emitter:
                 while view and not self.failed.is_set():
                     if time.monotonic() > deadline:
                         raise BrokenPipeError()
-                    if not select.select([], [self.fd], [], .1)[1]:
-                        continue
-                    try:
-                        count = os.write(self.fd, view)
-                    except BlockingIOError:
-                        continue
+                    if self.native:
+                        count = self.native.write(view, deadline, self.failed)
+                    else:
+                        if not select.select([], [self.fd], [], .1)[1]:
+                            continue
+                        try:
+                            count = os.write(self.fd, view)
+                        except BlockingIOError:
+                            continue
                     if count <= 0:
                         raise BrokenPipeError()
                     view = view[count:]
@@ -131,4 +156,9 @@ class Emitter:
         if self.thread.is_alive():
             self.failed.set()
             self.thread.join(1)
-        os.set_blocking(self.fd, self.blocking)
+        if self.native:
+            if self.thread.is_alive():
+                raise OSError('Windows bridge writer did not stop')
+            self.native.close()
+        else:
+            os.set_blocking(self.fd, self.blocking)

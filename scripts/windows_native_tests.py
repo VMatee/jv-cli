@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Current native Windows gate: shared contracts, private NTFS state, kernel locks.
+"""Current native Windows gate: shared contracts and native platform primitives.
 
 This is not engine, bridge execution, or installed-package acceptance.
 """
@@ -32,11 +32,12 @@ def main():
     if os.name != "nt" or sys.platform != "win32":
         raise SystemExit("Run this gate on native Windows")
     suite = unittest.defaultTestLoader.loadTestsFromNames(
-        (*windows_preflight.SHARED_TESTS, "test_windows_native", "test_windows_execution"))
+        (*windows_preflight.SHARED_TESTS, "test_windows_native", "test_windows_execution",
+         "test_windows_pipes"))
     result = unittest.TextTestRunner(verbosity=2, resultclass=NativeResult).run(suite)
     if not result.wasSuccessful() or result.skipped:
         return 1
-    print(f"{result.testsRun} shared/native storage and execution primitive tests passed. "
+    print(f"{result.testsRun} shared/native storage, execution and pipe primitive tests passed. "
           "Engine, bridge execution, and installed-package acceptance remain pending.")
     return 0
 

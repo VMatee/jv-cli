@@ -12,6 +12,7 @@ import threading
 import time
 import unittest
 from unittest.mock import patch
+from windows_test_support import trusted_fixture_directory
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "lib"))
@@ -29,6 +30,7 @@ class WindowsExecution(unittest.TestCase):
         cls.runtime = tempfile.TemporaryDirectory(prefix="staging-python-", dir=ROOT)
         cls.addClassCleanup(cls.runtime.cleanup)
         target = Path(cls.runtime.name)
+        trusted_fixture_directory(target)
         # Do not weaken executable ACL validation when the development Python
         # installation permits writes by another principal. Stage only binaries;
         # use its known standard library explicitly, never user site/config.
@@ -42,6 +44,7 @@ class WindowsExecution(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="staging-execution-", dir=ROOT)
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        trusted_fixture_directory(self.root)
         self.env = w.isolated_env(self.root / "state")
         self.env["PYTHONHOME"] = sys.base_prefix
 

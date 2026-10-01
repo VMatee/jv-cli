@@ -342,7 +342,7 @@ class Bridge:
 
 def serve(*, input_fd=None, output_fd=None, client_factory=None, session_factory=None):
     """Internal injection only: production parser exposes no test/bypass flags."""
-    output = bridge = None
+    output = bridge = reader = None
     fatal = False
     signalled = False
     previous_signals = {}
@@ -394,10 +394,18 @@ def serve(*, input_fd=None, output_fd=None, client_factory=None, session_factory
     except (Exception, KeyboardInterrupt):
         fatal = True
     finally:
+        if reader:
+            try:
+                reader.close()
+            except OSError:
+                fatal = True
         if bridge:
             bridge.close()
         if output:
-            output.close()
+            try:
+                output.close()
+            except OSError:
+                fatal = True
         for signum, handler in previous_signals.items():
             signal.signal(signum, handler)
     return 2 if fatal or (output and output.failed.is_set()) or (bridge and bridge.fatal) else 0
