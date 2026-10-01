@@ -63,6 +63,7 @@ Native checkpoint commands (Python launcher `py -3.10 -B`):
 | `-m unittest discover -s tests -p test_windows_native.py -v` | 30 actual native tests passed, zero skips |
 | `scripts/windows_native_tests.py` | 121 passed: 91 shared + 30 native storage/locking tests, zero skips |
 | `bin/jvcli --version` | JV CLI 0.4.9 |
+| `scripts/manage.py verify` | Complete manifest verified: 104 source/documentation files |
 
 The native tests include new/existing directories and files, replacement, failure
 cleanup, Thai/Unicode/spaces, long paths, case aliases, inherited ACL rejection,
@@ -74,6 +75,18 @@ CI adds a separate Windows native-state job; the existing Windows preflight and
 Linux matrix remain intact. Hosted results must be checked after push. Linux-only
 tests are not relabeled as native Windows acceptance. `.gitattributes` now fixes
 text checkout line endings to LF so source manifest hashes agree across platforms.
+
+Implementation commit: `086bd53272370c860c83706f22a7d89703958095`. Publication was
+attempted normally but the configured HTTPS account `mateelonggpt-dev` received
+HTTP 403 (no write access to `VMatee/jv-cli`). A read-only SSH attempt with
+`BatchMode=yes` and existing host trust failed with `Permission denied (publickey)`.
+No credentials, keys, authentication settings, or remote URLs were changed.
+Fresh fetch still reports `008eb5eee246a808794ffa8e1a70f018d4965514` on origin;
+local and remote SHAs therefore do **not** match. Repository write authentication
+must be fixed before publication. The available [GitHub Actions run](https://github.com/VMatee/jv-cli/actions/runs/36864280861)
+succeeded for the starting SHA only; it supplies no CI evidence for this checkpoint.
+The implementation and this evidence follow-up are committed locally. No Windows
+ZIP, installation, engine acceptance, or bridge execution acceptance was performed.
 
 Remaining: public-file `0o644` ACL policy is explicitly unavailable; existing
 private storage must match the protected policy, with no migration/repair utility
