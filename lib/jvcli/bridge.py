@@ -6,10 +6,11 @@ No request changes cwd, the engine, environment, or the server protocol.
 """
 from __future__ import annotations
 
-import os
+import contextlib
 from pathlib import Path
 import queue
 import re
+import signal
 import sys
 import threading
 import uuid
@@ -20,6 +21,28 @@ from .safety import JvError, redact_data, strict_json, terminal_text
 from .transport import validate_base_url
 
 PROTOCOL = 1
+AUTH_TIMEOUT = 30.0
+LOGOUT_TIMEOUT = 5.0
+
+
+class OperationTimeout(Exception):
+    """Internal deadline; never expose exception details on the wire."""
+
+
+@contextlib.contextmanager
+def deadline(seconds):
+    # Linux main-thread operations only. No auth worker may outlive its owner.
+    previous = signal.getsignal(signal.SIGALRM)
+    def expired(signum, frame):
+        raise OperationTimeout()
+    signal.signal(signal.SIGALRM, expired)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
 ID = re.compile(r'[A-Za-z0-9_-]{1,100}\Z')
 ERRORS = {
     'invalid_request': 'Request is not valid',
@@ -53,6 +76,12 @@ class RequestError(Exception):
 
 def identifier(value):
     return isinstance(value, str) and ID.fullmatch(value) is not None
+
+
+def thread_identifier(value):
+    # Engine thread IDs become positional argv values on resume. ASCII alone
+    # is insufficient: a leading hyphen can be interpreted as an engine option.
+    return identifier(value) and not value.startswith('-')
 
 
 def string(value, maximum, *, controls=False):
@@ -156,8 +185,11 @@ class Bridge:
         self.account = None
         if client:
             try:
-                client.logout()
+                with deadline(LOGOUT_TIMEOUT):
+                    client.logout()
             except Exception:
+                pass
+            finally:
                 # Local token ownership ends even if server revocation is unavailable.
                 client._token = None
 
@@ -183,7 +215,8 @@ class Bridge:
                 try:
                     cli._ensure_state()
                     self.client = self.client_factory(base)
-                    self.client.login(request['username'].strip(), password)
+                    with deadline(AUTH_TIMEOUT):
+                        self.client.login(request['username'].strip(), password)
                 except Exception:
                     self.logout()
                     raise RequestError('authentication_failed') from None
@@ -205,7 +238,13 @@ class Bridge:
                         resume=request.get('resume_session_id'),
                         read_only=request.get('read_only', False),
                         allow_network=request.get('allow_network'), account=self.account)
-                    self.session = self.context.__enter__()
+                    candidate = self.context.__enter__()
+                    # Saved CLI state is not itself a protocol frame. Never echo
+                    # arbitrary nested/corrupt metadata through session.started.
+                    if candidate.thread_id is not None and not thread_identifier(candidate.thread_id):
+                        self.context.__exit__(None, None, None)
+                        raise RequestError('invalid_session')
+                    self.session = candidate
                 except Exception:
                     self.context = None
                     raise RequestError('invalid_session') from None
@@ -251,6 +290,8 @@ class Bridge:
 
     def _turn(self, text):
         def sink(event):
+            if event.get('type') == 'thread.started' and not thread_identifier(event.get('thread_id')):
+                raise RequestError('engine_error')
             frame = normalize(event)
             if frame:
                 self.emit(frame.pop('type'), turn_id=self.turn_id, **frame)
@@ -311,7 +352,17 @@ def serve(*, input_fd=None, output_fd=None, client_factory=None, session_factory
     """Internal injection only: production parser exposes no test/bypass flags."""
     output = bridge = None
     fatal = False
+    signalled = False
+    previous_signals = {}
+    def stop_signal(signum, frame):
+        nonlocal fatal, signalled
+        # Do not acquire locks or unwind partially constructed session state
+        # inside a signal handler. The owner performs all cleanup.
+        fatal = True
+        signalled = True
     try:
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            previous_signals[signum] = signal.signal(signum, stop_signal)
         output = Emitter(sys.stdout.fileno() if output_fd is None else output_fd)
         try:
             workspace = cli._workspace_check(Path.cwd())
@@ -325,9 +376,11 @@ def serve(*, input_fd=None, output_fd=None, client_factory=None, session_factory
                     'session': True, 'resume': True, 'cancel': 'local', 'images': False,
                     'thread_new': True})
         reader = LineReader(sys.stdin.fileno() if input_fd is None else input_fd)
-        while not bridge.stopping and not output.failed.is_set():
+        while not signalled and not bridge.stopping and not output.failed.is_set():
             bridge.reap()
             line = reader.next()
+            if signalled or output.failed.is_set():
+                break
             if line is EOF:
                 break
             if line is OVERSIZE:
@@ -353,4 +406,6 @@ def serve(*, input_fd=None, output_fd=None, client_factory=None, session_factory
             bridge.close()
         if output:
             output.close()
+        for signum, handler in previous_signals.items():
+            signal.signal(signum, handler)
     return 2 if fatal or (output and output.failed.is_set()) or (bridge and bridge.fatal) else 0

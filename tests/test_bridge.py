@@ -14,7 +14,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'lib'))
 from jvcli import bridge, cli
-from jvcli.bridge_io import Emitter, MAX_LINE
+from jvcli.bridge_io import Emitter, MAX_LINE, MAX_EVENT
 
 PASSWORD = 'TEST_PASSWORD_DO_NOT_LEAK'
 TOKEN = 'TEST_TOKEN_DO_NOT_LEAK'
@@ -22,7 +22,7 @@ KEY = 'TEST_ADAPTER_KEY_DO_NOT_LEAK'
 
 
 class Peer:
-    def __init__(self, root, *, public=False, state=None, workspace=None, structured=False):
+    def __init__(self, root, *, public=False, state=None, workspace=None, structured=False, fixture=None):
         self.home = root / 'home'
         self.home.mkdir(exist_ok=True)
         self.workspace = workspace or root / 'workspace'
@@ -31,6 +31,8 @@ class Peer:
         env = {'PATH': os.environ['PATH'], 'HOME': str(self.home),
                'JVCLI_HOME': str(self.state), 'PYTHONDONTWRITEBYTECODE': '1',
                'LANG': 'C.UTF-8', 'JVCLI_AGENT_API': '1' if structured else '0'}
+        if fixture:
+            env['BRIDGE_FIXTURE'] = fixture
         command = ([str(ROOT / 'bin/jvcli'), 'bridge', '--stdio'] if public else
                    [sys.executable, '-B', str(ROOT / 'tests/fixtures/bridge_runner.py')])
         self.p = subprocess.Popen(command, cwd=self.workspace, env=env,
@@ -58,6 +60,8 @@ class Peer:
             self.pending += data
         line, self.pending = self.pending.split(b'\n', 1)
         self.lines.append(line)
+        assert len(line) + 1 <= MAX_EVENT
+        assert b'\x1b' not in line
         result = json.loads(line)
         assert isinstance(result, dict)
         return result
@@ -87,6 +91,8 @@ class Peer:
         rest = self.pending + self.p.stdout.read()
         for line in rest.splitlines():
             self.lines.append(line)
+            assert len(line) + 1 <= MAX_EVENT
+            assert b'\x1b' not in line
             assert isinstance(json.loads(line), dict)
         err = self.p.stderr.read()
         assert err == b'', err

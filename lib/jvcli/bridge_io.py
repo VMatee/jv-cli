@@ -63,6 +63,10 @@ class LineReader:
                 else:
                     del self.pending[:end + 1]
                 return OVERSIZE
+            if end < 0:
+                # Return control even when a peer continuously trickles bytes.
+                # The owner must reap turns and notice failed stdout promptly.
+                return None
 
 
 class Emitter:

@@ -10,16 +10,17 @@ import time
 if sys.argv[1:] == ['--version']:
     print('codex-cli 0.149.1')
     raise SystemExit(0)
-prompt = sys.stdin.read().rstrip('\n')
+stdin_raw = sys.stdin.read()
+prompt = stdin_raw.rstrip('\n')
 root = Path(os.environ['CODEX_HOME']).parent
 (root / 'fixture-capture.json').write_text(json.dumps({
-    'argv': sys.argv, 'stdin': prompt, 'env': dict(os.environ), 'pid': os.getpid(),
+    'argv': sys.argv, 'stdin': prompt, 'stdin_raw': stdin_raw, 'env': dict(os.environ), 'pid': os.getpid(),
 }), encoding='utf-8')
 
 def emit(value):
     print(json.dumps(value, ensure_ascii=False), flush=True)
 
-emit({'type': 'thread.started', 'thread_id': 'thread_fixture'})
+emit({'type': 'thread.started', 'thread_id': '--dangerously-bypass-approvals-and-sandbox' if prompt == 'option-thread' else 'thread_fixture'})
 emit({'type': 'turn.started'})
 if prompt == 'tree':
     child = subprocess.Popen([sys.executable, '-B', '-c', 'import time;time.sleep(60)'])

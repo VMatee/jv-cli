@@ -33,7 +33,8 @@ text, never HTML or executable content.
 Each request has `type`, `request_id`, and optionally `protocol` (defaults to 1).
 IDs match `[A-Za-z0-9_-]{1,100}`. Use distinct IDs for outstanding operations; the
 bridge does not implement replay/deduplication. Acknowledgements/errors carry the
-request ID. Turn stream events carry the generated `turn_id`; both the initial
+request ID. IDs are correlation labels, not authorization, turn identity, or
+idempotency keys. Reusing one does not reuse or replace a turn. Turn stream events carry the generated `turn_id`; both the initial
 and terminal turn frames also carry the originating request ID.
 
 Duplicate keys, nonfinite numbers, invalid UTF-8, non-object JSON, invalid types,
@@ -98,8 +99,17 @@ Bridge login does not read or save terminal account defaults and does not use
 existing private state directories as needed. Bearer tokens remain owned by the
 client; Desktop never receives one. Replacement, failed login, and normal/fatal
 cleanup attempt logout, dropping local token ownership even if revocation fails.
-Network operations retain the existing client's timeout/retry behavior; auth and
-session setup are synchronous and cannot be interrupted by another request.
+Authentication and session setup remain synchronous; another protocol request
+cannot interrupt them. Bridge login adds a 30-second overall deadline around the
+client call, and logout a 5-second deadline; the underlying socket idle timeouts
+still apply. Deadline failures use the existing sanitized error categories.
+These Linux main-thread deadlines use SIGALRM, reserved by the bridge process.
+They do not change terminal client timeouts, endpoints, retries, or persistence.
+Session setup is local: the shared engine version subprocess has a 10-second
+timeout and locks are nonblocking. Ordinary filesystem operations still depend
+on OS/filesystem responsiveness; no Python deadline guarantees recovery from an
+uninterruptible kernel operation. An interrupted login may leave server-side
+state unknown if no usable token was received.
 The trusted local engine receives its existing local adapter key, not the JV
 password or bearer token. Known token/adapter-key echoes are redacted from events.
 
@@ -116,7 +126,11 @@ plus explicit network enable is rejected. No bypass mode exists.
 
 `sandbox` is `read-only` or `workspace-write`; `network` is boolean; `transport`
 reflects the existing selected mode, not a new bridge transport decision.
-`thread_id` is null or the existing engine thread ID.
+`thread_id` is null or an existing engine thread ID matching the bounded ASCII
+identifier format and never starting with a hyphen. Engine thread events use
+the same check before any ID can become a positional resume argument.
+Corrupt saved thread metadata is rejected as `invalid_session`
+rather than echoed as arbitrary JSON.
 
 The shared `_session_runtime` context manager retains engine discovery/version
 checks, workspace safety, private directories, session ID/path validation,
@@ -136,7 +150,8 @@ in the private session state; do not put credentials in prompts.
 ```
 
 The shared engine runner sends text over the engine's stdin with a native argument
-vector. It neither invokes a shell nor spawns another `jvcli`. Existing public
+vector, with one trailing newline appended (existing engine-runner behavior).
+It neither invokes a shell nor spawns another `jvcli`. Existing public
 `exec` positional prompts and `exec/resume --json` shapes remain unchanged.
 
 Stable stream frames (all include `turn_id`):
@@ -181,6 +196,12 @@ ID, then local active work is cancelled and runtime/locks/client are closed.
 A final turn cancellation frame can follow the stopping acknowledgement.
 EOF follows the same cleanup without a stopping acknowledgement. Broken stdout
 and output backpressure stop work; an acknowledgement may be impossible.
+SIGINT/SIGTERM request cooperative local cleanup and produce exit 2. Signal
+handlers only set flags; cleanup runs in the owner thread after any current
+synchronous operation finishes or times out. Repeated signals do not interrupt
+teardown. Terminal CLI signal behavior is unchanged. Bytes following a shutdown
+request are not processed. Fragmented input does not block turn reaping or
+stdout-failure detection.
 
 Exit **0**: clean shutdown or EOF, including active-turn local cleanup. Recoverable
 request errors do not change this status. Exit **2**: unsafe startup workspace,
@@ -191,7 +212,8 @@ The main thread owns authentication/session/lifecycle. One turn worker owns the
 shared runner, with a size-one result queue; teardown joins it before closing the
 session. One dedicated bounded writer serializes all stdout. Engine process wait,
 readers, and writer have bounded waits. A turn worker that unexpectedly fails to
-join within 15 seconds causes fatal exit rather than concurrent session teardown;
+join within 15 seconds causes fatal process exit rather than concurrent session
+teardown; restart is required, and no healthy continuation is attempted;
 logout cannot be guaranteed in that catastrophic path. Forced process kill or OS
 failure similarly cannot guarantee server-side token revocation. Normal fixture
 cancellation, EOF, broken pipe, and shutdown verify cleanup and process termination.
@@ -221,3 +243,4 @@ cleanup, EOF, broken stdout, backpressure, and secret exclusion from output,
 metadata, argv, and engine environment. Existing terminal regression tests remain
 mandatory. Real production acceptance, Desktop consumption, images, native Windows,
 remote job cancellation, and any release/version bump require later milestones.
+See [Milestone 3B review](BRIDGE_REVIEW.md) for adversarial findings and evidence.
