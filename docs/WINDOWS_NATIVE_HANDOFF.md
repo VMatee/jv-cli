@@ -1,9 +1,89 @@
 # JV CLI Windows native development handoff
 
-This is an engineering handoff prepared on Linux on 2026-10-01. It is ready for
-implementation on a real Windows PC. **Native Windows JV CLI is not functional
-or accepted yet.** The Windows backend intentionally rejects unfinished secure
-operations. Do not distribute this branch as a supported Windows release.
+This engineering handoff was prepared on Linux on 2026-10-01 and continued on
+native Windows the same day. **Native Windows JV CLI is not functional or accepted
+yet.** Private NTFS state and kernel locks now have native tests; execution and
+packaging remain blocked. Do not distribute this branch as a supported release.
+
+## Native Windows storage checkpoint — 2026-10-01
+
+Starting checkout: `008eb5eee246a808794ffa8e1a70f018d4965514`, clean
+`feature/windows-native`, matching freshly fetched origin. Actual host: Windows
+11 Pro, build 26200, AMD64; Python 3.10.11, Git 2.49.0.windows.1, Node 22.12.0,
+Windows PowerShell 5.1.26100.9549. The test process token was **not elevated**.
+No additional Windows user, administrator privileges, real account, production
+authentication, external inference, or JV job was used.
+
+Implemented in the lazy native binding `platform/_windows_fs.py`, exposed through
+the existing `windows.py` boundary:
+
+- Private directories and files receive a protected DACL at creation, with full
+  access for the current token's user and LocalSystem only; owner and every ACE
+  are checked on the opened handle. Existing inherited, null, extra-principal,
+  inherit-only, or otherwise unsupported DACLs are rejected without repair.
+- Every component is opened with `NtCreateFile` relative to a retained parent
+  handle, using `OBJ_DONT_REPARSE` and `FILE_OPEN_REPARSE_POINT`. Directory handles
+  include list access and deny delete sharing to prevent ancestor renames.
+  Handle inspection rejects reparse points and multi-link state files. A real
+  injected junction mutation after opening the parent did not redirect a write.
+- UTF-8 private replacement writes a uniquely created private file, flushes it,
+  then uses handle-relative `NtSetInformationFile` rename. Failures preserve the
+  previous file and mark only the owned temporary handle for deletion. A live
+  reader can cause a sharing failure; the operation fails closed without retry.
+  This proves atomic visibility and explicit flushing, not power-loss recovery.
+- `LockFileEx` locks byte zero with immediate shared/exclusive contention.
+  Opaque owners retain non-inheritable file and ancestor handles; closing or
+  process termination releases the kernel lock. No metadata or sentinel-file
+  interpretation can override a live conflicting owner.
+
+Security scope is **fixed local NTFS volumes**. UNC, other filesystems, substituted
+drive roots, alternate streams, reserved names, and ambiguous components are
+rejected. Private state permissions do not isolate another process running as the
+same user or an administrator. Kernel access denial was additionally exercised
+with an impersonated restricted token; a separate Windows account was not created.
+The path checker returns a point-in-time lexical path; it is not a capability for
+later unchecked filesystem operations. Sensitive backend operations reacquire
+handles. Workspace/image/download containment remains a separate unfinished layer.
+
+Rejected approach: Win32 metadata-only directory handles plus sharing flags did
+not prevent write/reparse mutation. Adding list access blocked ordinary path-based
+replacement. The implementation instead opens and renames relative to pinned
+handles; it does not relax sharing or substitute zero-valued no-follow flags.
+Native API references: [NtCreateFile](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-ntcreatefile),
+[OBJECT_ATTRIBUTES](https://learn.microsoft.com/en-us/windows/win32/api/ntdef/ns-ntdef-_object_attributes),
+[FILE_RENAME_INFORMATION](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information),
+[LockFileEx](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-lockfileex).
+
+Native checkpoint commands (Python launcher `py -3.10 -B`):
+
+| Command suffix | Result |
+| --- | --- |
+| `scripts/windows_preflight.py` | 91 shared/preparatory tests passed, zero skips; 59 Python files compile; imports/version pass |
+| `-m unittest discover -s tests -p test_platform_contracts.py -v` | 21 passed at the initial baseline; included in the final preflight/broad gate |
+| `-m unittest discover -s tests -p test_windows_native.py -v` | 30 actual native tests passed, zero skips |
+| `scripts/windows_native_tests.py` | 121 passed: 91 shared + 30 native storage/locking tests, zero skips |
+| `bin/jvcli --version` | JV CLI 0.4.9 |
+
+The native tests include new/existing directories and files, replacement, failure
+cleanup, Thai/Unicode/spaces, long paths, case aliases, inherited ACL rejection,
+restricted-token read denial, hard links, junctions, a reparse mutation race,
+non-inherited handles, competing writer/reader processes, process death, corrupt
+metadata, missing `create=False` locks, and exception cleanup.
+
+CI adds a separate Windows native-state job; the existing Windows preflight and
+Linux matrix remain intact. Hosted results must be checked after push. Linux-only
+tests are not relabeled as native Windows acceptance. `.gitattributes` now fixes
+text checkout line endings to LF so source manifest hashes agree across platforms.
+
+Remaining: public-file `0o644` ACL policy is explicitly unavailable; existing
+private storage must match the protected policy, with no migration/repair utility
+yet. Engine discovery, restricted environment, owned process trees, bounded bridge
+pipes, deadlines, workspace containment, console, installer and Windows packaging
+remain unimplemented. `require_bridge_io` still prevents ready. No Windows artifact
+or installed-package/real-engine acceptance is claimed. The Linux shell build,
+test and verification gates remain Linux CI tasks; they are not a Windows builder.
+Continue with the public-file policy and native engine/runtime layers, preserving
+the version 0.4.9, engine 0.149.1, and protocol 1 pins.
 
 ## Current baseline
 
@@ -59,7 +139,7 @@ schemas. `bridge.py` is shared; there is no Windows bridge fork.
 advertise Windows. The Linux release workflow, dependencies, and version stay
 unchanged. Local Linux ZIPs built for validation are not published releases.
 
-## Exact Windows implementation gaps
+## Original handoff gaps (see native checkpoint above for completed portions)
 
 Implement one boundary at a time with real native tests. Do not change stub
 guards to return success while their guarantees are missing.

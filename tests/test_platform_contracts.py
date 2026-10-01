@@ -60,7 +60,7 @@ class PlatformContracts(unittest.TestCase):
         value = r"\\server\share\JV state"
         path = state_directory(ROOT, {"JVCLI_HOME": value}, platform_name="nt")
         self.assertEqual(path, PureWindowsPath(value))
-        with self.assertRaises(PlatformUnavailableError):
+        with self.assertRaises(JvError):
             get_backend("nt").no_symlink_path(path)
 
     def test_relative_drive_and_device_state_paths_rejected(self):
@@ -79,9 +79,7 @@ class PlatformContracts(unittest.TestCase):
     def test_path_case_is_preserved_without_claiming_native_identity(self):
         path = state_directory(ROOT, {"JVCLI_HOME": r"C:\JV\MiXeD"}, platform_name="nt")
         self.assertEqual(str(path), r"C:\JV\MiXeD")
-        # PureWindowsPath's lexical comparison cannot prove reparse containment.
-        with self.assertRaises(PlatformUnavailableError):
-            get_backend("nt").no_symlink_path(path)
+        # Native identity/reparse checks belong to test_windows_native, not this lexical test.
 
     def test_native_executable_names(self):
         for name in ("jvcli", "codex", "node"):
@@ -91,21 +89,13 @@ class PlatformContracts(unittest.TestCase):
         with self.assertRaises(JvError):
             native_executable_name("jvcli", platform_name="unknown")
 
-    def test_windows_security_operations_fail_without_touching_files(self):
+    def test_unimplemented_windows_operations_fail_without_touching_files(self):
         windows = get_backend("nt")
         with contextlib.ExitStack() as stack:
             for name in ("open", "mkdir", "chmod", "replace", "kill"):
                 stack.enter_context(patch.object(os, name, side_effect=AssertionError("OS mutation")))
             stack.enter_context(patch.object(cli.subprocess, "Popen", side_effect=AssertionError("spawn")))
             calls = (
-                lambda: windows.no_symlink_path(ROOT), lambda: windows.private_dir(ROOT),
-                lambda: windows.atomic_write(ROOT / "secret", "synthetic"),
-                lambda: windows.open_private_read(ROOT / "state"),
-                lambda: windows.open_lock(ROOT / "lock"),
-                lambda: windows.open_lock(ROOT / "lock", create=False),
-                lambda: windows.lock_file(object()),
-                lambda: windows.lock_file(object(), shared=True),
-                lambda: windows.close_lock(object()),
                 lambda: windows.find_engine(ROOT, "codex.cmd"),
                 lambda: windows.spawn_engine(["codex.exe", "exec", "-"], {}),
                 lambda: windows.stop_process(object()), lambda: windows.require_terminal(),

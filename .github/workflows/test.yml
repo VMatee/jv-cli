@@ -37,3 +37,21 @@ jobs:
           python-version: '3.12'
       - name: Compile, import, version, and explicit shared test subset
         run: python -B scripts/windows_preflight.py
+  windows-native-state:
+    name: Windows native NTFS privacy and kernel locks (execution pending)
+    runs-on: windows-2022
+    timeout-minutes: 5
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      JV_API_BASE_URL: 'http://127.0.0.1:9'
+      JV_API_USERNAME: ''
+      JV_API_PASSWORD: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Shared contracts and real native filesystem/process contention tests
+        run: python -B scripts/windows_native_tests.py

@@ -1,4 +1,4 @@
-"""Native Windows handoff contracts, not an implementation of Windows support.
+"""Native Windows backend; unfinished execution operations remain fail-closed.
 
 Never substitute chmod, unlocked files, or parent-only kill for these operations.
 See docs/WINDOWS_NATIVE_HANDOFF.md for acceptance gates and native API references.
@@ -6,6 +6,7 @@ See docs/WINDOWS_NATIVE_HANDOFF.md for acceptance gates and native API reference
 from __future__ import annotations
 
 import contextlib
+import os
 
 from .common import PlatformUnavailableError, windows_state_path
 
@@ -21,39 +22,39 @@ def state_directory(app_root, environ):
     return windows_state_path(environ)
 
 
+def _filesystem():
+    if os.name != "nt":
+        unavailable("filesystem operations on a non-Windows host")
+    from . import _windows_fs
+    return _windows_fs
+
+
 def no_symlink_path(path):
-    """Must reject unsafe junctions/reparse points and verify native containment."""
-    unavailable("path security")
+    return _filesystem().no_symlink_path(path)
 
 
 def private_dir(path):
-    """Create/verify a user-private ACL before any secret or state is written."""
-    unavailable("private directory ACLs")
+    return _filesystem().private_dir(path)
 
 
 def atomic_write(path, text, mode=0o600):
-    """Private create, safe atomic replacement, mode-to-ACL policy, cleanup."""
-    unavailable("private atomic file writes")
+    return _filesystem().atomic_write(path, text, mode)
 
 
 def open_private_read(path):
-    """Return a Python-compatible readable FD after handle/reparse checks."""
-    unavailable("private file reads")
+    return _filesystem().open_private_read(path)
 
 
 def open_lock(path, *, create=True):
-    """Return an owned opaque handle; create=False must never create a file."""
-    unavailable("session/install lock opening")
+    return _filesystem().open_lock(path, create=create)
 
 
 def lock_file(handle, *, shared=False):
-    """Nonblocking shared/exclusive lock; contention raises BlockingIOError."""
-    unavailable("session/install locking")
+    return _filesystem().lock_file(handle, shared=shared)
 
 
 def close_lock(handle):
-    """Release only this owner's handle; process death must release ownership."""
-    unavailable("session/install lock release")
+    return _filesystem().close_lock(handle)
 
 
 def find_engine(runtime, explicit=None):

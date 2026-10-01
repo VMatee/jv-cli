@@ -1,0 +1,2 @@
+# Shipped source manifests must hash identical bytes on Windows and Linux.
+* text=auto eol=lf
