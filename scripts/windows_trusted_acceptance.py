@@ -313,7 +313,7 @@ class TrustedAcceptance(unittest.TestCase):
         script = self.workspace / 'tree.py'
         script.write_text('import os,sys,subprocess,time,json\nfrom pathlib import Path\n'
                           "p=subprocess.Popen([sys.executable,'-B','-c','import time;time.sleep(120)'])\n"
-                          f'Path({str(marker)!r}).write_text(json.dumps([os.getpid(),p.pid]))\n'
+                          f'm=Path({str(marker)!r});t=m.with_suffix(".tmp");t.write_text(json.dumps([os.getpid(),p.pid]));os.replace(t,m)\n'
                           'time.sleep(120)\n', encoding='utf-8')
         process = self.start()
         self.login(process)

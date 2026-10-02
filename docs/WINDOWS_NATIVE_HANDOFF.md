@@ -83,6 +83,14 @@ shared bridge signal-interruption exit code 2; requested shutdown/EOF exit 0.
 The only runtime correction was `doctor`: on Windows it now relies on existing
 native private-state DACL validation, rather than misleading POSIX mode bits.
 
+A repeat run exposed a fixture publication race: the process-tree test now
+atomically renames its complete PID marker before the parent observes readiness.
+Hosted CI also reported incomplete network ownership evidence. The fixture's
+PowerShell/CIM query was replaced: the probe obtains the same PID/parent/name evidence
+directly with Toolhelp32 snapshots, retaining TCP ownership and exact Job Object
+membership assertions without depending on CIM startup. Failures retain error types
+and worker state, never environment or command-line dumps.
+
 Commands (native `py -3.10 -B`):
 
 - `scripts/build_windows.py`: source manifest, pinned dependencies, 78 payload files,

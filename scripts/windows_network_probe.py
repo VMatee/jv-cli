@@ -11,7 +11,6 @@ import os
 from pathlib import Path
 import shutil
 import socket
-import subprocess
 import sys
 import tempfile
 import threading
@@ -21,6 +20,33 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'lib'))
 from engine_smoke import run_case
 from jvcli.platform import windows
+
+
+def process_identity(pid):
+    """Only PID/parent/name evidence; no CIM service, shell or command-line dump."""
+    from jvcli.platform import _windows_fs as fs
+    class Entry(C.Structure):
+        _fields_ = [('size', fs.D), ('usage', fs.D), ('pid', fs.D), ('heap', C.c_size_t),
+                    ('module', fs.D), ('threads', fs.D), ('parent', fs.D),
+                    ('priority', fs.W.LONG), ('flags', fs.D), ('name', fs.W.WCHAR * 260)]
+    snapshot = fs._api(fs.K, 'CreateToolhelp32Snapshot', fs.W.HANDLE, fs.D, fs.D)(2, 0)
+    if snapshot == fs.W.HANDLE(-1).value:
+        raise C.WinError(C.get_last_error())
+    first = fs._api(fs.K, 'Process32FirstW', fs.W.BOOL, fs.W.HANDLE, C.POINTER(Entry))
+    following = fs._api(fs.K, 'Process32NextW', fs.W.BOOL, fs.W.HANDLE, C.POINTER(Entry))
+    def find(wanted):
+        entry = Entry(); entry.size = C.sizeof(entry)
+        more = first(snapshot, C.byref(entry))
+        while more:
+            if entry.pid == wanted:
+                return {'ProcessId': entry.pid, 'ParentProcessId': entry.parent, 'Name': entry.name}
+            more = following(snapshot, C.byref(entry))
+        raise OSError('TCP owner/parent missing from native process snapshot')
+    try:
+        child = find(pid)
+        return [child, find(child['ParentProcessId'])]
+    finally:
+        fs._close(snapshot)
 
 
 def connection_owner(family, local_port, remote_port):
@@ -67,16 +93,12 @@ def probe(engine, root, family, tool, executable, allowed, execution_mode=None):
                 try:
                     with processes[-1]._mutex:
                         fs._check(in_job(handle, processes[-1]._job, C.byref(owned)))
+                        if not owned.value:
+                            raise OSError('Tool TCP owner escaped the JV Job Object')
                 finally:
                     fs._close(handle)
-                ps = str(Path(windows.minimal_env()['SYSTEMROOT']) / 'System32/WindowsPowerShell/v1.0/powershell.exe')
-                query = f"$p=Get-CimInstance Win32_Process -Filter 'ProcessId={pid}'; $q=Get-CimInstance Win32_Process -Filter ('ProcessId='+$p.ParentProcessId); @($p,$q) | Select-Object ProcessId,ParentProcessId,Name | ConvertTo-Json -Compress"
-                result = subprocess.run([ps, '-NoProfile', '-Command', query], capture_output=True,
-                                        text=True, timeout=6, shell=False, env=windows.minimal_env())
-                if result.returncode:
-                    raise OSError('Process identity query failed')
                 evidence.append({'tcp_owner_pid': pid, 'owned_job': bool(owned.value),
-                                 'processes': json.loads(result.stdout)})
+                                 'processes': process_identity(pid)})
                 conn.sendall(b'x')
         except socket.timeout:
             pass
@@ -103,7 +125,8 @@ def probe(engine, root, family, tool, executable, allowed, execution_mode=None):
         thread.join(9)
         listener.close()
     if errors or thread.is_alive():
-        raise RuntimeError('Network ownership evidence incomplete')
+        raise RuntimeError(f'Network ownership evidence incomplete: family={family}, tool={tool}, '
+                           f'errors={errors}, worker_alive={thread.is_alive()}')
     connected = bool(evidence)
     print(json.dumps({'family': 'IPv4' if family == socket.AF_INET else 'IPv6', 'tool': tool,
                       'allow_network': allowed, 'connected': connected, 'evidence': evidence}))
