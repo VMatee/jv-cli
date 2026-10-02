@@ -1,0 +1,49 @@
+name: Windows trusted-host package acceptance
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-package:
+    name: Windows package build and installed acceptance
+    runs-on: windows-2022
+    timeout-minutes: 30
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      JV_API_BASE_URL: 'http://127.0.0.1:9'
+      JV_API_USERNAME: ''
+      JV_API_PASSWORD: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+      - name: Verify source and build unsigned portable bundle and installer
+        run: python -B scripts/build_windows.py
+      - name: Installed public bridge, real engine, isolated runtime and installer lifecycle
+        shell: pwsh
+        run: |
+          $fixtureNode = (Get-Command node.exe).Source
+          python -B scripts/windows_package_acceptance.py --installer dist/jv-cli-0.4.9-windows-x86_64-setup.exe --portable dist/jv-cli-0.4.9-windows-x86_64.zip --node "$fixtureNode"
+      - name: Windows trusted-host source acceptance
+        shell: pwsh
+        run: |
+          python -B -c "import sys,pathlib,tarfile; sys.path.insert(0,'lib'); from jvcli.platform.windows import private_dir; p=private_dir(pathlib.Path('downloads/accepted-engine').resolve()); tarfile.open('downloads/codex-0.149.1-win32-x64.tgz').extractall(p)"
+          python -B scripts/windows_bridge_acceptance.py --engine downloads/accepted-engine/package/vendor/x86_64-pc-windows-msvc/bin/codex.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -B scripts/manage.py verify
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jv-cli-0.4.9-windows-x86_64-unsigned
+          path: |
+            dist/jv-cli-0.4.9-windows-x86_64.zip
+            dist/jv-cli-0.4.9-windows-x86_64-setup.exe
+            dist/SHA256SUMS.txt
+          if-no-files-found: error

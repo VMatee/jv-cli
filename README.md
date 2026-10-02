@@ -6,9 +6,16 @@ An AI coding assistant for your terminal. Ask questions about a project, make ch
 
 ## Get started
 
-### Requirements
+### Windows dedicated workers
 
-- Ubuntu/Linux x86_64. Other platforms are not currently supported by this package.
+For the unsigned Windows AMD64 development installer and portable bundle, see
+[Windows installation](docs/WINDOWS_INSTALL.md). Windows workers must explicitly
+select `--execution-mode trusted-host`. The instructions below describe the Linux
+release.
+
+### Linux requirements
+
+- Ubuntu/Linux x86_64 for the Linux packages below.
 - Python 3.10+ and an existing JV account.
 - For the normal ZIP: Node.js 18+, npm, and internet access during installation.
 - For the offline ZIP: `unzip` and `sha256sum`; Node.js is included and npm is not required.

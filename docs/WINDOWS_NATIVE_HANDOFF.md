@@ -1,5 +1,119 @@
 # JV CLI Windows native development handoff
 
+## Windows package / installer checkpoint - 2026-10-02
+
+Started clean on `feature/windows-native` at local/fetched origin
+`3b02ce8f086b10dfa4a540cf9a25c2dc213e212b`. Its six CI jobs were verified green:
+Windows shared/native and Linux Python 3.10 through 3.13. No runtime authority, version,
+engine pin or bridge protocol change was needed for packaging.
+
+### Distribution and installation
+
+`scripts/build_windows.py` builds on native Windows only. It verifies the source
+manifest, obtains exact SHA256-pinned official Python 3.10.11 AMD64 embedded,
+Codex 0.149.1 Windows native npm and Inno Setup 6.4.3 artifacts, and rejects unsafe
+archive paths. The Inno installer download was also Authenticode-verified locally
+(Valid, Pyrsys B.V.). Inno is extracted using its upstream `/PORTABLE=1` support
+into a disposable repository build directory; no build-tool registration/service
+or machine policy changes are required. Pins/URLs are in the builder. References:
+Python's official `3.10.11/python-3.10.11-embed-amd64.zip`, npm's exact
+`@openai/codex/-/codex-0.149.1-win32-x64.tgz`, and upstream Inno `is-6_4_3`
+`setup.iss`/`isportable.iss`. No latest/runtime download or npm invocation.
+
+Directory bundle: `jvcli.exe`, `bin/jvcli`, `lib/jvcli`, `python/`,
+`runtime/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/`,
+licenses, version/build metadata and `PACKAGE.sha256`. Python `_pth` isolation
+excludes site/user packages, PYTHONPATH and PYTHONHOME. The small C# AMD64 launcher
+is compiled with Windows' Framework compiler; Windows' inbox .NET Framework 4.x
+is used, without an extra runtime installer. It invokes the bundled Python by
+absolute path with explicit argv and inherited standard handles, never a shell.
+The native architecture check rejects ARM64/emulation. Its non-inherited
+kill-on-close Job Object is assigned at CreateProcess using JOB_LIST; only three
+standard handles are inherited. Launcher death therefore also owns/ends Python,
+auth workers and nested engine/tool jobs. An application use lock remains held
+through job closure. Prompts and credentials keep their existing stdin channels.
+
+Inno setup is per-user (`PrivilegesRequired=lowest`), AMD64 Windows only, default
+`%LOCALAPPDATA%\Programs\JV CLI`. State stays `%LOCALAPPDATA%\JV\jv-cli` or
+absolute `JVCLI_HOME`. Setup adds only its optional user PATH entry and records
+ownership. Reinstall/upgrade and uninstall require exclusive use-lock acquisition;
+they never terminate applications. Failed file replacement uses Inno rollback.
+Root/ancestor and nested reparse points are rejected. Unrelated nonempty install
+directories and default state ancestors/descendants are rejected. Uninstall uses
+its exact installed-file inventory, never recursive state deletion; unknown files
+are retained. It removes only the PATH entry it owns, retaining concurrent other
+entries and restoring the original string when unchanged. No remove-data option.
+
+Artifacts: `dist/jv-cli-0.4.9-windows-x86_64.zip`,
+`dist/jv-cli-0.4.9-windows-x86_64-setup.exe`, `dist/SHA256SUMS.txt`.
+These are unsigned development artifacts, not releases. The payload manifest
+covers 78 files including Python/Codex/Inno licenses. BUILD.json records dependency
+hashes and the source-manifest hash. Fixed ZIP entry timestamps and explicit file
+inventory are used; compiler/installer metadata means bit-identical builds are
+not claimed. A later signing step must precede final artifact hashing.
+No tests, source checkout, credentials, caches or machine evidence are shipped.
+
+### Native acceptance evidence
+
+`windows_package_acceptance.py` installs in a disposable protected repository
+fixture with spaces/Thai paths. It refuses to replace a pre-existing user install.
+It removes external Python/Codex/Node from runtime PATH and poisons PYTHONHOME and
+PYTHONPATH. Public app invocations use installed `jvcli.exe`; a second test runner
+uses embedded Python and checks all 19 loaded JV module origins under the installed
+application. Only test fixture code comes from the checkout. Node is an explicit
+network-test fixture, not a bundled/runtime dependency. Bundled Python itself is
+used for tool, auth-helper and child/grandchild tests.
+
+Seventeen installed tests, zero skips: 12 public/real-engine bridge cases (including
+six socket cases in one matrix) and five direct native auth deadline races. They
+cover startup, protocol 1, auth/logout, two turns, restart/resume, full-access and
+approval-never settings, workspace/outside writes, secret exclusion, locking,
+corrupt metadata/workspace binding, Unicode/Thai, EOF, broken output, backpressure,
+cancellation/shutdown/EOF/parent-death owned cleanup, unrelated sentinel survival,
+structured journal continuation/reopen and explicit restricted-request rejection.
+All six PowerShell/bundled-Python/Node IPv4/IPv6 loopback connections succeeded.
+
+Installer acceptance also passes: absolute executable/version/help/doctor, bundled
+engine discovery, PowerShell 5.1 PATH invocation, hidden real-console Ctrl+C and
+Thai NDJSON, active-use upgrade/uninstall refusal, forced mid-upgrade failure and
+rollback (full prior manifest still valid), same-version reinstall, install/uninstall
+junction rejection, portable ZIP extraction/manifest/version, unknown-file retention,
+uninstall registration/PATH cleanup and state preservation. Ctrl+C retains the
+shared bridge signal-interruption exit code 2; requested shutdown/EOF exit 0.
+The only runtime correction was `doctor`: on Windows it now relies on existing
+native private-state DACL validation, rather than misleading POSIX mode bits.
+
+Commands (native `py -3.10 -B`):
+
+- `scripts/build_windows.py`: source manifest, pinned dependencies, 78 payload files,
+  portable ZIP, installer and SHA256SUMS; unsigned.
+- `scripts/windows_package_acceptance.py --installer dist/jv-cli-0.4.9-windows-x86_64-setup.exe --portable dist/jv-cli-0.4.9-windows-x86_64.zip --node <explicit fixture node.exe>`:
+  17 installed tests, zero skips; six socket cases plus installer/console checks.
+- `scripts/windows_preflight.py`: 91 shared tests, zero skips.
+- `scripts/windows_native_tests.py`: 192 shared/native tests, zero skips (the previous
+  185 plus seven portable package-integrity tests).
+- `scripts/windows_bridge_acceptance.py --engine <pinned native codex.exe>`:
+  192 categorized shared/native tests + 11 public bridge tests + six socket cases,
+  all pass with zero skips. Historical restricted investigation remains available.
+- `scripts/manage.py verify`: regenerated repository manifest; source changes and
+  build/test definitions included, generated artifacts/downloads excluded.
+
+`.github/workflows/windows-package.yml` reproduces the unsigned build, installed
+acceptance and source trusted-host gate on Windows Server 2022 without secrets,
+then uploads run artifacts. No release/tag publication. Existing Windows job names
+now describe their actual gates. Linux Python 3.10 through 3.13 regression/build jobs remain
+unchanged; their exact published-SHA results are checked separately, not inferred
+from native Windows tests. Source manifest line endings must remain LF before hashing.
+
+Next: JV Desktop Windows integration, separately authorized. Launch installed
+`jvcli.exe bridge --stdio --execution-mode trusted-host` from the project cwd with
+private pipes and optional absolute isolated JVCLI_HOME. Desktop is untouched.
+Restricted-token network-denied Windows execution remains unsupported by Codex
+0.149.1 and fail-closed in JV. Trusted-host is for dedicated worker accounts.
+No production authentication, real credentials/jobs, external inference, firewall
+changes, admin service, engine/version/protocol bump, main merge or tag/release.
+
+
 ## Dedicated Windows trusted-host checkpoint — 2026-10-02
 
 Deployment authority was explicitly changed by the operator: dedicated ordinary

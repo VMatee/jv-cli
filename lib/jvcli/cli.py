@@ -1118,7 +1118,8 @@ def command_doctor(json_mode=False):
     }
     try:
         _ensure_state()
-        data["checks"]["private_state"] = (STATE_DIR.stat().st_mode & 0o077) == 0
+        data["checks"]["private_state"] = True if os.name == "nt" else (STATE_DIR.stat().st_mode & 0o077) == 0
+        # _ensure_state verifies native DACLs; mode bits do not prove Windows privacy.
         config = _load_disk_config()
         data["base_url"] = validate_base_url(
             os.environ.get("JV_API_BASE_URL")

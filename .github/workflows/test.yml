@@ -20,7 +20,7 @@ jobs:
       - run: ./verify.sh
       - run: ./scripts/build-release.sh
   windows-preflight:
-    name: Windows imports and shared contracts (native support pending)
+    name: Windows imports and shared contracts
     runs-on: windows-2022
     timeout-minutes: 5
     env:
@@ -38,7 +38,7 @@ jobs:
       - name: Compile, import, version, and explicit shared test subset
         run: python -B scripts/windows_preflight.py
   windows-native-state:
-    name: Windows native storage, jobs and pipes (acceptance pending)
+    name: Windows native storage, jobs, pipes and deadlines
     runs-on: windows-2022
     timeout-minutes: 5
     env:

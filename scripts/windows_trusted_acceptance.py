@@ -26,6 +26,22 @@ TOKEN = 'SYNTHETIC_TOKEN_NEVER_PERSIST'
 
 class TrustedAcceptance(unittest.TestCase):
     engine = None
+    launcher = None
+    tool_python = None
+
+    def bridge_command(self):
+        prefix = [str(self.launcher)] if self.launcher else [self.python, "-s", "-B", str(ROOT / "bin/jvcli")]
+        return prefix + ["bridge", "--stdio", "--execution-mode", "trusted-host"]
+
+    def bridge_env(self):
+        env = windows.minimal_env()
+        env.update(PROCESSOR_ARCHITECTURE="AMD64", USERPROFILE=str(Path.home()), JVCLI_HOME=str(self.state), JVCLI_POLL_INTERVAL="0.01",
+                   JV_API_PASSWORD="PARENT_PASSWORD_SENTINEL", OPENAI_API_KEY="PARENT_OPENAI_SENTINEL")
+        if not self.launcher:
+            env.update(PYTHONHOME=sys.base_prefix, JVCLI_CODEX_BIN=self.engine)
+        else:
+            env.update(PYTHONHOME=str(self.root / "missing-python"), PYTHONPATH=str(self.root / "missing-modules"))
+        return env
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='staging-trusted-', dir=ROOT)
@@ -40,7 +56,7 @@ class TrustedAcceptance(unittest.TestCase):
             source = Path(sys.executable).parent / name
             if source.exists():
                 shutil.copyfile(source, self.root / name)
-        self.python = str(self.root / 'python.exe')
+        self.python = self.tool_python or str(self.root / 'python.exe')
         self.steps = queue.Queue()
         self.posts = 0
         self.jobs = {}
@@ -94,12 +110,8 @@ class TrustedAcceptance(unittest.TestCase):
         self.base = f'http://127.0.0.1:{self.server.server_port}'
 
     def start(self, *, workspace=None):
-        env = windows.minimal_env()
-        env.update(PROCESSOR_ARCHITECTURE="AMD64", USERPROFILE=str(Path.home()), PYTHONHOME=sys.base_prefix, JVCLI_HOME=str(self.state),
-                   JVCLI_CODEX_BIN=self.engine, JVCLI_POLL_INTERVAL='0.01',
-                   JV_API_PASSWORD='PARENT_PASSWORD_SENTINEL', OPENAI_API_KEY='PARENT_OPENAI_SENTINEL')
-        command = [self.python, '-s', '-B', str(ROOT / 'bin/jvcli'), 'bridge', '--stdio',
-                   '--execution-mode', 'trusted-host']
+        env = self.bridge_env()
+        command = self.bridge_command()
         process = subprocess.Popen(command, cwd=workspace or self.workspace, env=env,
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                    shell=False)
@@ -245,10 +257,7 @@ class TrustedAcceptance(unittest.TestCase):
 
     def test_broken_output_cleanup(self):
         # Stop the local reader by closing the OS read handle, not killing JV.
-        env = windows.minimal_env()
-        env.update(PROCESSOR_ARCHITECTURE="AMD64", USERPROFILE=str(Path.home()), PYTHONHOME=sys.base_prefix, JVCLI_HOME=str(self.state))
-        process = subprocess.Popen([self.python, '-B', str(ROOT / 'bin/jvcli'), 'bridge', '--stdio',
-                                    '--execution-mode', 'trusted-host'], cwd=self.workspace, env=env,
+        process = subprocess.Popen(self.bridge_command(), cwd=self.workspace, env=self.bridge_env(),
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
             self.assertEqual(json.loads(process.stdout.readline())['type'], 'bridge.ready')
@@ -310,7 +319,7 @@ class TrustedAcceptance(unittest.TestCase):
         self.login(process)
         self.session(process)
         self.steps.put({'type': 'tool_call', 'name': 'shell_command', 'arguments': {
-            'command': f"& '{sys.executable}' -B '{script}'", 'timeout_ms': 120000}})
+            'command': f"& '{self.tool_python or sys.executable}' -B '{script}'", 'timeout_ms': 120000}})
         self.send(process, 'turn.start', text='SYNTHETIC_CANCEL_STDIN')
         started = self.receive(process, 'turn.started')
         for _ in range(400):
@@ -351,10 +360,7 @@ class TrustedAcceptance(unittest.TestCase):
                 fs._close(handle)
 
     def test_public_backpressure_is_fatal(self):
-        env = windows.minimal_env()
-        env.update(PYTHONHOME=sys.base_prefix, USERPROFILE=str(Path.home()), JVCLI_HOME=str(self.state))
-        process = subprocess.Popen([self.python, '-B', str(ROOT / 'bin/jvcli'), 'bridge', '--stdio',
-                                    '--execution-mode', 'trusted-host'], cwd=self.workspace, env=env,
+        process = subprocess.Popen(self.bridge_command(), cwd=self.workspace, env=self.bridge_env(),
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         def flood():
             try:
