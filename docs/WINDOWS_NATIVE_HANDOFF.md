@@ -1,5 +1,109 @@
 # JV CLI Windows native development handoff
 
+## Dedicated Windows trusted-host checkpoint — 2026-10-02
+
+Deployment authority was explicitly changed by the operator: dedicated ordinary
+Windows worker accounts intentionally run tools with unrestricted filesystem and
+network access and no approval prompts. This is an explicit profile, never a
+fallback for failed sandbox enforcement. Starting local/fetched origin:
+`f6a83d557fc5e7f3b2e986513eeeb6e7c97bde6a`.
+
+### Public selection and pinned mapping
+
+`jvcli bridge --stdio --execution-mode trusted-host` selects immutable process
+policy. `exec` and `resume` accept the same option. No environment alias or new
+bridge request field was added. Linux rejects this Windows-only profile and keeps
+its existing defaults. Saved trusted-host sessions record `execution_mode` and
+require the same explicit selection on resume; legacy metadata remains compatible.
+
+Shared `execution_policy.resolve` maps trusted-host to Codex
+`sandbox_mode="danger-full-access"`, `approval_policy="never"`, and enabled tool
+networking. The pinned source maps danger-full-access to `PermissionProfile::Disabled`;
+no tool sandbox is applied. The existing Windows backend preference remains
+unelevated for restricted profiles; it does not override disabled enforcement.
+All managed settings are explicit `-c` overrides, outranking project config.
+The bypass CLI switch is unnecessary. Engine prompts remain on stdin; no prompt
+or credential is added to argv. The engine pin is still 0.149.1, CLI 0.4.9,
+bridge protocol 1. No elevated provisioning, WFP, service or firewall changes.
+
+Startup stderr identifies full access, network allowed and approvals never;
+stdout remains NDJSON. For explicitly opted-in parents, `session.started.sandbox`
+is `danger-full-access`. A trusted-host session requesting read-only or network
+denial gets `unsupported_capability`, before engine/session creation. Direct
+Windows restricted network-denial configuration raises a clear unsupported error.
+The default Windows secure-session guard remains; nothing silently enables this
+profile. Historical restricted-token socket failures below are still valid.
+
+### Control-plane changes and evidence
+
+Public Windows sessions now use the existing shared session/bridge core only
+when trusted-host is explicit. Native workspace validation rejects reparse/UNC
+and unsupported storage through existing Windows primitives before readiness;
+this validates control-plane identity, not a tool filesystem containment promise.
+Drive roots are rejected correctly. Resume retains workspace/account/origin,
+transport, execution-mode and session-lock binding.
+
+Real resume exposed a concrete ACL ownership issue: Codex replaces its own
+`engine/config.toml` with inherited ACLs. JV's strict private-file replacement
+correctly refused that file. On Windows, JV now owns a separate protected
+`engine-config.toml` under the session; complete argv configuration overrides are
+authoritative. JV does not relax DACL checks or claim ownership of engine-rewritten
+files. Linux's config location/behavior is unchanged.
+
+The new `scripts/windows_trusted_acceptance.py` launches the actual public
+`bin/jvcli bridge --stdio --execution-mode trusted-host` in native subprocesses,
+with the real pinned engine and a loopback fake JV HTTP service. It injects no
+bridge/session implementation bypass. Disposable trusted Python executables are
+used so hosted runner ACLs cannot weaken auth-helper executable checks. Tests
+keep the operator home path only for workspace validation; tool/engine homes are
+isolated and no normal-user credentials/config are read.
+
+Eleven real-engine/public bridge tests cover startup/protocol-only output,
+login/logout, two turns, restart/resume/third turn, outside/workspace writes,
+approval-never config and unattended completion, tool environment secret
+exclusion, password/token absence from output and persisted state, conflicting
+owners, corrupt metadata, workspace binding, Thai paths/prompts, malformed input,
+final line without newline, EOF, broken output, fatal backpressure, structured
+journal reopen, cancellation, shutdown, EOF during a tool, and parent death.
+Each tree-ending test observes live child/grandchild handles, waits for termination,
+checks an unrelated sentinel survives, and verifies no automatic resubmission.
+Remote job state remains unknown on cancellation.
+
+`windows_network_probe.py --execution-mode trusted-host --engine <pinned exe>`
+adds six real tool checks: PowerShell/Python/Node, each IPv4 and IPv6. Every local
+listener received its connection; TCP owner PID and exact JV Job Object membership
+were verified. The original restricted probe and historical evidence are retained.
+The combined driver also retains a separately selected restricted investigation;
+unsupported network denial is not counted as trusted-host acceptance.
+
+### Gates and next scope
+
+Commands use native `py -3.10 -B`:
+
+- `scripts/windows_preflight.py`: 91 shared tests, zero skips.
+- `scripts/windows_native_tests.py`: 185 tests, zero skips: shared 91,
+  filesystem/ACL 37, execution/process 18, pipes 16, auth deadlines 7,
+  pinned grammar 1, journal durability 11, execution-policy regression 4.
+- `scripts/windows_trusted_acceptance.py --engine <pinned exe>`: 11 tests,
+  zero skips, including real public sessions and engine tool execution.
+- `scripts/windows_bridge_acceptance.py --engine <pinned exe>` is the combined
+  authoritative trusted-host gate: those 185 + 11 tests and six network cases,
+  all passed with zero skips on this machine.
+  It exits nonzero if any required category fails; restricted network-denied
+  execution is separately printed as unsupported, not silently skipped.
+- Manifest regeneration uses `manage.write_manifest(Path.cwd())`, followed by
+  `scripts/manage.py verify`: 124 files verified; no Windows release artifacts
+  are built here.
+
+Real native tests are offline/synthetic. Linux full regression remains a CI gate;
+Windows execution is not substituted for a Linux run. Packaging/installer,
+console UX, Desktop integration, live service acceptance and releases remain
+separate milestones. No production authentication, real credentials/jobs,
+external inference, version bump, main merge, tag or release occurred.
+
+The sections below retain the earlier secure-sandbox investigation and its
+unresolved restriction. They do not describe the explicitly trusted-host authority.
+
 ## Valid direct sandbox investigation — 2026-10-01
 
 Started clean at local/fetched origin `bbda38a2e7988fe25a71e455220ab952ab9e3d23`.

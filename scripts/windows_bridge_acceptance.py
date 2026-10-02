@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline Windows bridge gate. Missing invariants or sandbox failures are fatal.
+"""Offline Windows trusted-host bridge gate; missing invariants are fatal.
 
 Uses only synthetic responses and a loopback listener. No accounts/inference API.
 Final installation and release packaging are deliberately outside this gate.
@@ -8,6 +8,7 @@ import argparse
 import os
 from pathlib import Path
 import socket
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -78,6 +79,7 @@ def engine_checks(engine):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--engine', required=True)
+    parser.add_argument('--restricted-investigation', action='store_true', help='Historical restricted sandbox gate; expected unsupported/failure')
     args = parser.parse_args()
     if os.name != 'nt':
         raise SystemExit('Native Windows required')
@@ -90,16 +92,24 @@ def main():
         ('auth deadlines', ('test_windows_auth',)),
         ('pinned grammar', ('test_windows_grammar',)),
         ('journal durability', ('test_windows_journal',)),
+        ('execution policy', ('test_execution_policy',)),
     ):
         result = unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.loadTestsFromNames(names))
         ok = result.wasSuccessful() and not result.skipped
         print(f'{category}: {result.testsRun} tests; {"PASS" if ok else "FAIL"}')
         passed &= ok
-    passed &= engine_checks(args.engine)
-    # Explicitly fail until real public sessions and all lifecycle/containment
-    # tests exist. Passing primitive tests can never promote an incomplete gate.
-    print('FAIL: public bridge lifecycle and native workspace containment acceptance remain incomplete')
-    return 1
+    if args.restricted_investigation:
+        return 0 if engine_checks(args.engine) and passed else 1
+    from windows_trusted_acceptance import run
+    passed &= run(args.engine)
+    probe = subprocess.run([sys.executable, '-B', str(ROOT / 'scripts/windows_network_probe.py'),
+                            '--engine', args.engine, '--execution-mode', 'trusted-host'],
+                           cwd=ROOT, shell=False, timeout=180)
+    passed &= probe.returncode == 0
+    print('Secure Windows network-denied execution: UNSUPPORTED by pinned restricted-token backend; requests fail closed')
+    print('TRUSTED-HOST WINDOWS ACCEPTANCE: ' + ('PASS' if passed else 'FAIL'))
+    return 0 if passed else 1
+
 
 
 if __name__ == '__main__':

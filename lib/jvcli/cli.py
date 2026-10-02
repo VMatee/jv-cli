@@ -303,8 +303,10 @@ def _model_catalog(structured=False):
 
 
 def _write_engine_config(
-    session_dir, port, read_only=False, allow_network=False, structured=False
+    session_dir, port, read_only=False, allow_network=False, structured=False, execution_mode=None
 ):
+    from .execution_policy import resolve
+    sandbox, allow_network = resolve(execution_mode, read_only=read_only, allow_network=allow_network)
     # The local adapter emits real SSE progress events while remote inference is
     # still in progress, so this is only an inactivity/network guard, not an
     # overall model-response deadline.
@@ -328,7 +330,7 @@ def _write_engine_config(
         "model_catalog_json": str(catalog),
         "model_instructions_file": str(instructions),
         "approval_policy": "never",
-        "sandbox_mode": "read-only" if read_only else "workspace-write",
+        "sandbox_mode": sandbox,
         "hide_agent_reasoning": True,
         "web_search": "disabled",
         "check_for_update_on_startup": False,
@@ -376,8 +378,11 @@ def _write_engine_config(
         config["shell_environment_policy"] = get_backend().tool_environment(session_dir)
         config["allow_login_shell"] = False
         config["windows"] = {"sandbox": "unelevated"}
+    # Codex may replace its own config with inherited ACLs on Windows. Keep
+    # JV-owned policy separate; the complete -c overrides below are authoritative.
+    policy_path = session_dir / "engine-config.toml" if os.name == "nt" else engine_home / "config.toml"
     atomic_write(
-        engine_home / "config.toml",
+        policy_path,
         "# Managed by JV CLI; no password or token stored here.\n"
         + "\n".join(f"{key} = {_toml(value)}" for key, value in config.items())
         + "\n",
@@ -806,10 +811,12 @@ def _run_engine(
 
 
 def _workspace_check(path):
+    if os.name == "nt":
+        path = no_symlink_path(path)
     path = path.resolve()
     user_home = Path.home().resolve()
     if (
-        path == Path("/")
+        path == Path(path.anchor)
         or path == user_home
         or path == APP_ROOT
         or path in APP_ROOT.parents
@@ -850,14 +857,13 @@ def _session_runtime(
     allow_network=None,
     images=(),
     account=None,
+    execution_mode=None,
 ):
-    if os.name == "nt":
+    from .execution_policy import resolve
+    _, allow_network = resolve(execution_mode, read_only=read_only, allow_network=allow_network)
+    if os.name == "nt" and execution_mode != "trusted-host":
         get_backend().unavailable("session sandbox and workspace acceptance")
     workspace = _workspace_check(Path.cwd())
-    if allow_network is None:
-        allow_network = not read_only
-    if read_only and allow_network:
-        raise JvError("--allow-network is available only in workspace-write mode")
     engine = _find_engine()
     if not engine:
         raise JvError(
@@ -888,6 +894,8 @@ def _session_runtime(
         raise JvError(
             "Resume must use the same project directory, API origin and username as the saved session"
         )
+    if resume and metadata.get("execution_mode") != execution_mode:
+        raise JvError("Resume must explicitly select the same execution mode")
     if resume and metadata.get("transport_mode", "legacy") != transport_mode:
         raise JvError(
             "Resume must use the same legacy/structured transport mode as the saved session"
@@ -949,17 +957,19 @@ def _session_runtime(
                 "created_at", datetime.datetime.now(datetime.timezone.utc).isoformat()
             ),
         }
+        if execution_mode is not None:
+            metadata["execution_mode"] = execution_mode
         try:
             port = runtime.start()
             overrides = _write_engine_config(
-                session_dir, port, read_only, allow_network, structured=structured
+                session_dir, port, read_only, allow_network, structured=structured, execution_mode=execution_mode
             )
             atomic_write(
                 session_dir / "session.json", json.dumps(metadata, indent=2) + "\n"
             )
             yield SessionRuntime(
                 workspace, sid, session_dir, metadata, engine, overrides,
-                runtime, turn_timeout, image_snapshots, read_only, allow_network,
+                runtime, turn_timeout, image_snapshots, read_only, allow_network, execution_mode,
             )
         finally:
             runtime.close()
@@ -974,10 +984,11 @@ class SessionRuntime:
     """Shared session/turn bookkeeping. Caller owns serialization and context lifetime."""
 
     def __init__(self, workspace, sid, session_dir, metadata, engine, overrides,
-                 runtime, turn_timeout, images, read_only, allow_network):
+                 runtime, turn_timeout, images, read_only, allow_network, execution_mode=None):
         self.workspace, self.sid, self.session_dir = workspace, sid, session_dir
         self.metadata, self.engine, self.overrides = metadata, engine, overrides
         self.runtime, self.turn_timeout, self.images = runtime, turn_timeout, images
+        self.execution_mode = execution_mode
         self.read_only, self.allow_network = read_only, allow_network
         self.thread_id = metadata.get("thread_id")
 
@@ -1008,14 +1019,17 @@ class SessionRuntime:
 
 
 def _run_session(prompt=None, *, resume=None, read_only=False, allow_network=None,
-                 json_mode=False, verbose=False, images=()):
+                 json_mode=False, verbose=False, images=(), execution_mode=None):
     with _session_runtime(resume=resume, read_only=read_only,
-                          allow_network=allow_network, images=images) as session:
+                          allow_network=allow_network, images=images, execution_mode=execution_mode) as session:
+        if execution_mode:
+            from .execution_policy import TRUSTED_STATUS
+            say(TRUSTED_STATUS)
         workspace, sid, runtime = session.workspace, session.sid, session.runtime
         allow_network = session.allow_network
         transport_mode = session.metadata["transport_mode"]
         say(
-            f"JV CLI {VERSION}\nWorkspace: {workspace}\nSession: {sid}\nSandbox: {'read-only' if read_only else 'workspace-write'}; tool network: {'enabled' if allow_network else 'disabled'}"
+            f"JV CLI {VERSION}\nWorkspace: {workspace}\nSession: {sid}\nSandbox: {'danger-full-access' if execution_mode else ('read-only' if read_only else 'workspace-write')}; tool network: {'enabled' if allow_network else 'disabled'}"
         )
         say(
             "Only use trusted projects. The selected workspace may be changed; installation isolation is not a VM."
@@ -1046,11 +1060,11 @@ def _run_session(prompt=None, *, resume=None, read_only=False, allow_network=Non
                     continue
                 if action == "permissions":
                     say(
-                        f"Workspace: {workspace}\nSandbox: {'read-only' if read_only else 'workspace-write'}\n"
+                        f"Workspace: {workspace}\nSandbox: {'danger-full-access' if execution_mode else ('read-only' if read_only else 'workspace-write')}\n"
                         f"Tool network: {'enabled' if allow_network else 'disabled'}\n"
                         "Policy is fixed for this session; restart with --read-only, --no-network or --allow-network to change it.\n"
-                        "No YOLO/sandbox-bypass mode. Network access does not authorize global installations.\n"
-                        "Installation and engine state are isolated; this is not a VM or a guarantee that other files cannot be read."
+                        + ("Dedicated Windows account authority applies outside the workspace.\n" if execution_mode else "No YOLO/sandbox-bypass mode. Network access does not authorize global installations.\n")
+                        + "Installation and engine state are isolated; this is not a VM or a guarantee that other files cannot be read."
                     )
                     continue
                 if action == "status":
@@ -1236,6 +1250,7 @@ def _parser():
     parser = argparse.ArgumentParser(
         prog="jvcli", description="JV CLI coding agent. No password is stored."
     )
+    parser.add_argument("--execution-mode", choices=["trusted-host"], help="Dedicated Windows account: unrestricted tools, no approvals")
     parser.add_argument("--version", action="version", version="JV CLI " + VERSION)
     parser.add_argument(
         "--read-only", action="store_true", help="Deny model tool writes"
@@ -1262,6 +1277,7 @@ def _parser():
     subs = parser.add_subparsers(dest="command")
     bridge = subs.add_parser("bridge", help="Machine NDJSON protocol (development)",
                              description="Versioned machine protocol over stdio; not an interactive terminal.")
+    bridge.add_argument("--execution-mode", choices=["trusted-host"], default=argparse.SUPPRESS)
     bridge.add_argument("--stdio", action="store_true", required=True,
                         help="Use the NDJSON machine transport on stdin/stdout")
     login = subs.add_parser(
@@ -1297,6 +1313,7 @@ def _parser():
         if command == "resume":
             sub.add_argument("session_id")
         sub.add_argument("prompt", nargs="+" if command == "exec" else "*")
+        sub.add_argument("--execution-mode", choices=["trusted-host"], default=argparse.SUPPRESS)
         sub.add_argument("--read-only", action="store_true", default=argparse.SUPPRESS)
         sub.add_argument("--verbose", action="store_true", default=argparse.SUPPRESS)
         network = sub.add_mutually_exclusive_group()
@@ -1363,9 +1380,14 @@ def main(argv=None):
         if args.command == "bridge":
             if args.read_only or args.allow_network is not None or args.verbose:
                 _parser().error("Bridge policy is selected by session.start, not terminal flags")
-            get_backend().require_bridge_io()
+            if args.execution_mode:
+                from .execution_policy import resolve, TRUSTED_STATUS
+                resolve(args.execution_mode)
+                say(TRUSTED_STATUS)
+            else:
+                get_backend().require_bridge_io()
             from .bridge import serve
-            return serve()
+            return serve(execution_mode=args.execution_mode) if args.execution_mode else serve()
         if args.command == "doctor":
             return command_doctor(args.json)
         if args.command == "self-test":
@@ -1421,6 +1443,7 @@ def main(argv=None):
         return _run_session(
             prompt,
             resume=getattr(args, "session_id", None),
+            execution_mode=args.execution_mode,
             read_only=args.read_only,
             allow_network=args.allow_network,
             json_mode=getattr(args, "json", False),

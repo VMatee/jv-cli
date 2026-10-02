@@ -102,7 +102,7 @@ def require_terminal():
 
 
 def require_bridge_io():
-    unavailable("bounded bridge pipe transport")
+    unavailable("secure bridge sessions (explicit --execution-mode trusted-host is required)")
 
 
 @contextlib.contextmanager

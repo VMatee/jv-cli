@@ -1,6 +1,6 @@
 # Stdio bridge protocol 1 — development contract
 
-JV CLI **0.4.9** introduces this Linux machine interface. Protocol version is
+JV CLI **0.4.9** introduces this machine interface for Linux and explicitly selected Windows trusted-host workers. Protocol version is
 independently **1**. Validation uses synthetic dependencies; production Desktop
 acceptance has not been performed.
 
@@ -17,16 +17,19 @@ or image. Unknown fields are rejected, including terminal permission flags on
 the bridge command line. Session policy is selected by `session.start`.
 The existing CLI's default state location and all terminal commands are unchanged.
 
-The implementation is Linux-only, like the current CLI. Desktop integration,
-Windows, PTY/ConPTY, images, bridge transport alternatives, and remote cancellation
-are deferred. Do not connect Desktop or a live account as part of ordinary tests.
+Windows dedicated workers explicitly select `jvcli bridge --stdio --execution-mode trusted-host`.
+This immutable process option enables unrestricted tool filesystem/network access
+and no approvals; it is never a fallback. Omitted mode preserves Linux defaults
+and leaves Windows secure sessions unavailable. Mode status goes to stderr.
+Desktop integration, PTY/ConPTY, images, bridge transport alternatives, and remote
+cancellation are deferred. Do not connect Desktop or a live account as part of ordinary tests.
 
 ## Wire rules
 
 Both directions use UTF-8 NDJSON, one object per line. Blank input lines are
 ignored. Output uses `ensure_ascii=False`; Thai remains readable. Stdout contains
 only protocol frames, never raw engine JSON, prose, ANSI, exception details, or
-HTTP bodies. Current bridge diagnostics on stderr are silent; command-parser help
+HTTP bodies. Trusted-host startup diagnostics appear only on stderr; command-parser help
 and invocation errors occur before the protocol starts. Consumers render text as
 text, never HTML or executable content.
 
@@ -103,7 +106,9 @@ Authentication and session setup remain synchronous; another protocol request
 cannot interrupt them. Bridge login adds a 30-second overall deadline around the
 client call, and logout a 5-second deadline; the underlying socket idle timeouts
 still apply. Deadline failures use the existing sanitized error categories.
-These Linux main-thread deadlines use SIGALRM, reserved by the bridge process.
+Linux main-thread deadlines use SIGALRM, reserved by the bridge process.
+Windows uses owned isolated helper processes, joins I/O and terminates expired
+workers before state can be installed. Auth secrets travel on private pipes.
 They do not change terminal client timeouts, endpoints, retries, or persistence.
 Session setup is local: the shared engine version subprocess has a 10-second
 timeout and locks are nonblocking. Ordinary filesystem operations still depend
@@ -118,13 +123,17 @@ password or bearer token. Known token/adapter-key echoes are redacted from event
 `session.start` accepts optional `resume_session_id`, `read_only`, `allow_network`.
 Absent policy fields use existing CLI defaults (workspace-write with network;
 read-only defaults to no network), including when resuming. Read-only
-plus explicit network enable is rejected. No bypass mode exists.
+plus explicit network enable is rejected. Windows trusted-host is selected only at process startup, never by a request.
+In that mode, `read_only=true` or `allow_network=false` returns
+`unsupported_capability` before session/engine creation. Pinned Windows restricted-token
+network denial remains unsupported; no request silently enables networking.
 
 ```json
 {"type":"session.started","request_id":"session1","session_id":"synthetic_session","workspace":"/absolute/project","sandbox":"workspace-write","network":false,"transport":"structured","thread_id":null}
 ```
 
-`sandbox` is `read-only` or `workspace-write`; `network` is boolean; `transport`
+`sandbox` is `read-only` or `workspace-write` for existing clients, or
+`danger-full-access` when the parent explicitly opted into trusted-host; `network` is boolean; `transport`
 reflects the existing selected mode, not a new bridge transport decision.
 `thread_id` is null or an existing engine thread ID matching the bounded ASCII
 identifier format and never starting with a hyphen. Engine thread events use
@@ -136,8 +145,8 @@ The shared `_session_runtime` context manager retains engine discovery/version
 checks, workspace safety, private directories, session ID/path validation,
 username/API-origin/workspace/transport resume binding, install/session locks,
 policy configuration, metadata, and adapter lifecycle. `SessionRuntime.run_turn`
-is used by both terminal and bridge frontends. No new session metadata schema is
-introduced. Full prompts and bridge requests are not written to `session.json`.
+is used by both terminal and bridge frontends. Trusted-host metadata adds `execution_mode: "trusted-host"`; resume must explicitly
+select the same mode. Existing Linux metadata is unchanged. Full prompts and bridge requests are not written to `session.json`.
 Existing engine history behavior is unchanged and may retain conversation text
 in the private session state; do not put credentials in prompts.
 
@@ -181,7 +190,7 @@ validated outcome, not merely a raw `turn.completed` event. A second turn or
 ```
 
 Cancellation signals the adapter and external engine cancellation event, stops
-the owned Linux process group, and waits for local cleanup before allowing another
+the owned Linux process group or Windows Job Object, and waits for local cleanup before allowing another
 turn. Final `turn.cancelled` correlates to the original turn request. An already
 submitted remote job **may continue**; no remote cancellation API is claimed.
 
@@ -224,7 +233,7 @@ cancellation, EOF, broken pipe, and shutdown verify cleanup and process terminat
 `message`. Codes: `invalid_request`, `unsupported_protocol`, `not_authenticated`,
 `authentication_failed`, `session_not_started`, `session_busy`, `turn_busy`,
 `invalid_session`, `workspace_error`, `engine_error`, `cancel_error`,
-`internal_error`, `input_limit`. Session setup errors are deliberately grouped as
+`internal_error`, `input_limit`, `unsupported_capability`. Session setup errors are deliberately grouped as
 `invalid_session` to avoid leaking arbitrary engine/path/server exception text.
 `engine_error` is also the terminal `turn.failed` code.
 
@@ -240,7 +249,9 @@ adapter, synthetic engine events, and no installed CLI/account state.
 Tests cover stream purity, malformed/oversized requests, strict fields, Unicode,
 multiple turns, resume binding/locks, busy rejection, cancellation, process-tree
 cleanup, EOF, broken stdout, backpressure, and secret exclusion from output,
-metadata, argv, and engine environment. Existing terminal regression tests remain
-mandatory. Real production acceptance, Desktop consumption, images, native Windows,
+metadata, argv, and engine environment.
+Windows trusted-host acceptance uses the public parser/stdio path, a loopback fake
+JV service, and real pinned engine tools; see `scripts/windows_bridge_acceptance.py`. Existing terminal regression tests remain
+mandatory. Real production acceptance, Desktop consumption, images, installed Windows packages,
 remote job cancellation, and any release/version bump require later milestones.
 See [Milestone 3B review](BRIDGE_REVIEW.md) for adversarial findings and evidence.

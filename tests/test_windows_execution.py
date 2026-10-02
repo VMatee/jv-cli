@@ -112,8 +112,8 @@ class WindowsExecution(unittest.TestCase):
         self.assertEqual(policy["inherit"], "none")
         self.assertNotIn("JVCLI_ADAPTER_KEY", policy["set"])
         self.assertNotEqual(engine_env["CODEX_HOME"], policy["set"]["CODEX_HOME"])
-        cli._write_engine_config(self.root / "session", 12345)
-        config = (self.root / "session/engine/config.toml").read_text()
+        cli._write_engine_config(self.root / "session", 12345, allow_network=True)
+        config = (self.root / "session/engine-config.toml").read_text()
         self.assertNotIn("synthetic-adapter", config)
         self.assertIn('"inherit" = "none"', config)
 

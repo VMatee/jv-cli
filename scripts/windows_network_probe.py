@@ -43,7 +43,7 @@ def connection_owner(family, local_port, remote_port):
     raise OSError('No matching client TCP owner')
 
 
-def probe(engine, root, family, tool, executable, allowed):
+def probe(engine, root, family, tool, executable, allowed, execution_mode=None):
     from jvcli.platform import _windows_fs as fs
     listener = socket.socket(family)
     address = '127.0.0.1' if family == socket.AF_INET else '::1'
@@ -98,7 +98,7 @@ def probe(engine, root, family, tool, executable, allowed):
         with patch.object(windows, 'spawn_engine', spawn):
             run_case(engine, state, 'synthetic network boundary', [
                 ({'type': 'tool_call', 'name': 'shell_command', 'arguments': {'command': command}}, None),
-                ({'type': 'final', 'text': 'DONE'}, None)], allow_network=allowed)
+                ({'type': 'final', 'text': 'DONE'}, None)], allow_network=allowed, execution_mode=execution_mode)
     finally:
         thread.join(9)
         listener.close()
@@ -113,6 +113,7 @@ def probe(engine, root, family, tool, executable, allowed):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--engine', required=True)
+    parser.add_argument('--execution-mode', choices=['trusted-host'])
     args = parser.parse_args()
     if os.name != 'nt':
         raise SystemExit('Native Windows required')
@@ -131,8 +132,8 @@ def main():
         try:
             for family in (socket.AF_INET, socket.AF_INET6):
                 for tool, executable in tools:
-                    for allowed in (False, True):
-                        passed &= probe(engine, root, family, tool, executable, allowed)
+                    for allowed in ((True,) if args.execution_mode else (False, True)):
+                        passed &= probe(engine, root, family, tool, executable, allowed, args.execution_mode)
         finally:
             os.chdir(original)
     return 0 if passed else 1

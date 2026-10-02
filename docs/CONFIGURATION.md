@@ -51,6 +51,33 @@ Normal sessions can edit the selected workspace and use network-enabled project 
 
 Flags work before or after `exec`/`resume`; a subcommand flag overrides a preceding flag. `--read-only --allow-network` is invalid. `/permissions` shows the current policy without changing it; restart with the desired flags to change policy.
 
+## Dedicated Windows workers
+
+Select `--execution-mode trusted-host` explicitly on a dedicated Windows worker
+account. For machine integration:
+
+```text
+jvcli bridge --stdio --execution-mode trusted-host
+```
+
+The same option is accepted by `exec` and `resume`. Repeat it when reopening a
+trusted-host session. It is never selected automatically after a sandbox failure.
+
+In this mode, tools can read/write outside the workspace and use the network;
+approval prompts and the Codex tool sandbox are disabled. Tools have the normal
+permissions of the account running JV CLI. Use an ordinary dedicated account;
+Administrator privileges and disabling Windows Firewall are unnecessary.
+
+Process-tree ownership, private JV state, credential handling, cancellation,
+bridge framing and durable journaling remain enabled. The active mode is printed
+on stderr; bridge stdout remains protocol-only. The profile runs unattended.
+
+`--read-only`, `--no-network`, or equivalent restrictive bridge session requests
+are rejected in trusted-host mode. Windows network-denied execution remains
+unsupported and fails closed. Do not select trusted-host for untrusted tasks
+that require filesystem or network containment. Existing Linux permission
+defaults are unchanged. Windows installer and release-package support are separate.
+
 ## Images and saved sessions
 
 With `JVCLI_AGENT_API=1`, `exec` and `resume` accept up to four `--image PATH` options. Use PNG, JPEG, or WebP files inside the selected workspace, without symlinks. Account capabilities and service size limits also apply.

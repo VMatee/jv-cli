@@ -99,14 +99,14 @@ class StructuredScriptedClient:
         raise JvError('Engine requested an unexpected extra structured inference')
 
 
-def run_structured_case(engine, folder, command, marker):
+def run_structured_case(engine, folder, command, marker, *, execution_mode=None):
     client = StructuredScriptedClient(command, marker)
     processor = StructuredProcessor(client, folder / 'structured')
     runtime = AdapterRuntime(client, heartbeat=.5, processor=processor)
     output, errors = io.StringIO(), io.StringIO()
     try:
         port = runtime.start()
-        overrides = cli._write_engine_config(folder, port, structured=True)
+        overrides = cli._write_engine_config(folder, port, structured=True, execution_mode=execution_mode, allow_network=bool(execution_mode))
         runtime.begin_turn()
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
             rc, _ = cli._run_engine(
@@ -127,13 +127,13 @@ def run_structured_case(engine, folder, command, marker):
 
 
 def run_case(engine, folder, name, steps, *, thread_id=None, read_only=False,
-             repairs=0, expected_error=None, expected_output=None, allow_network=False):
+             repairs=0, expected_error=None, expected_output=None, allow_network=False, execution_mode=None):
     client = ScriptedClient(steps)
     runtime = AdapterRuntime(client, heartbeat=.5)
     output, errors = io.StringIO(), io.StringIO()
     try:
         port = runtime.start()
-        overrides = cli._write_engine_config(folder, port, read_only=read_only, allow_network=allow_network)
+        overrides = cli._write_engine_config(folder, port, read_only=read_only, allow_network=allow_network, execution_mode=execution_mode)
         runtime.begin_turn()
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
             rc, thread = cli._run_engine(engine, f'Run the local acceptance case: {name}', thread_id,

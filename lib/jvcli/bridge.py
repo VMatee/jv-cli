@@ -38,6 +38,7 @@ def deadline(seconds):
 
 ID = re.compile(r'[A-Za-z0-9_-]{1,100}\Z')
 ERRORS = {
+    'unsupported_capability': 'Requested execution restrictions are unsupported; trusted-host requires unrestricted filesystem and network access',
     'invalid_request': 'Request is not valid',
     'unsupported_protocol': 'Protocol version is not supported',
     'not_authenticated': 'Authentication is required',
@@ -151,7 +152,8 @@ def normalize(event):
 
 
 class Bridge:
-    def __init__(self, emitter, workspace, client_factory=None, session_factory=None):
+    def __init__(self, emitter, workspace, client_factory=None, session_factory=None, execution_mode=None):
+        self.execution_mode = execution_mode
         self.out, self.workspace = emitter, workspace
         self.client_factory = client_factory or cli._new_client
         self.session_factory = session_factory or cli._session_runtime
@@ -246,11 +248,18 @@ class Bridge:
                 # The protocol cannot switch cwd, including through an injected factory.
                 if cli._workspace_check(Path.cwd()) != self.workspace:
                     raise RequestError('workspace_error')
+                from .execution_policy import resolve, UnsupportedCapability
+                try:
+                    resolve(self.execution_mode, read_only=request.get("read_only", False),
+                            allow_network=request.get("allow_network"))
+                except UnsupportedCapability:
+                    raise RequestError("unsupported_capability") from None
+                policy = {"execution_mode": self.execution_mode} if self.execution_mode else {}
                 try:
                     self.context = self.session_factory(
                         resume=request.get('resume_session_id'),
                         read_only=request.get('read_only', False),
-                        allow_network=request.get('allow_network'), account=self.account)
+                        allow_network=request.get('allow_network'), account=self.account, **policy)
                     candidate = self.context.__enter__()
                     # Saved CLI state is not itself a protocol frame. Never echo
                     # arbitrary nested/corrupt metadata through session.started.
@@ -263,7 +272,7 @@ class Bridge:
                     raise RequestError('invalid_session') from None
                 self.emit('session.started', request_id=rid, session_id=self.session.sid,
                           workspace=str(self.workspace),
-                          sandbox='read-only' if self.session.read_only else 'workspace-write',
+                          sandbox='danger-full-access' if self.execution_mode else ('read-only' if self.session.read_only else 'workspace-write'),
                           network=self.session.allow_network,
                           transport=self.session.metadata['transport_mode'],
                           thread_id=self.session.thread_id)
@@ -361,7 +370,7 @@ class Bridge:
             self.logout()
 
 
-def serve(*, input_fd=None, output_fd=None, client_factory=None, session_factory=None):
+def serve(*, input_fd=None, output_fd=None, client_factory=None, session_factory=None, execution_mode=None):
     """Internal injection only: production parser exposes no test/bypass flags."""
     output = bridge = reader = None
     fatal = False
@@ -383,7 +392,7 @@ def serve(*, input_fd=None, output_fd=None, client_factory=None, session_factory
             output.emit({'type': 'request.error', 'request_id': None,
                          'code': 'workspace_error', 'message': ERRORS['workspace_error']})
             return 2
-        bridge = Bridge(output, workspace, client_factory, session_factory)
+        bridge = Bridge(output, workspace, client_factory, session_factory, execution_mode)
         bridge.emit('bridge.ready', protocol=PROTOCOL, cli_version=cli.VERSION,
                     workspace=str(workspace), capabilities={'auth': 'stdio-memory',
                     'session': True, 'resume': True, 'cancel': 'local', 'images': False,
