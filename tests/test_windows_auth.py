@@ -79,11 +79,12 @@ class WindowsAuth(unittest.TestCase):
                 self.assertNotIn(b'SYNTHETIC_', path.read_bytes())
 
     def test_timeout_late_server_result_cannot_install_token(self):
-        self.delay = .8
+        self.delay = 3
         with self.assertRaises(Expired):
-            self.call(seconds=.3)
+            self.call(seconds=2)
         self.assertIsNone(self.client._token)
-        self.returned.wait(2)
+        self.assertEqual(self.requests, ['/v1/auth/login'])
+        self.assertTrue(self.returned.wait(4))
         self.assertIsNone(self.client._token)
         self.delay = 0
         self.call()
@@ -92,12 +93,13 @@ class WindowsAuth(unittest.TestCase):
     def test_logout_timeout_cannot_clear_new_state(self):
         self.call()
         self.returned.clear()
-        self.delay = .8
+        self.delay = 3
         with self.assertRaises(Expired):
-            self.call('logout', seconds=.3)
+            self.call('logout', seconds=2)
         self.assertIsNone(self.client._token)
         self.client._token = 'NEW_SYNTHETIC_TOKEN'
-        self.returned.wait(2)
+        self.assertEqual(self.requests, ['/v1/auth/login', '/v1/auth/logout'])
+        self.assertTrue(self.returned.wait(4))
         self.assertEqual(self.client._token, 'NEW_SYNTHETIC_TOKEN')
 
     def test_repeated_timeout_has_no_worker_threads(self):
@@ -124,14 +126,18 @@ class WindowsAuth(unittest.TestCase):
             b.request({'type': 'auth.login', 'request_id': rid,
                        'username': 'synthetic', 'password': 'SYNTHETIC_PASSWORD',
                        'base_url': self.client.base_url})
-        with patch.object(auth, 'operation', isolated), patch.object(cli, 'STATE_DIR', self.root / 'bridge'), patch.object(bridge, 'AUTH_TIMEOUT', .3):
-            self.delay = .8
+        # A fresh helper may need more than 300ms to create its isolated state
+        # and import Python modules. Require actual server acceptance so this
+        # exercises a late response, rather than an expiry before submission.
+        with patch.object(auth, 'operation', isolated), patch.object(cli, 'STATE_DIR', self.root / 'bridge'), patch.object(bridge, 'AUTH_TIMEOUT', 2):
+            self.delay = 3
             login('expired')
             self.assertIsNone(b.client)
             self.assertIsNone(b.account)
             self.assertIsNone(b.session)
             self.assertEqual(frames[-1]['code'], 'authentication_failed')
-            self.assertTrue(self.returned.wait(2))
+            self.assertEqual(self.requests, ['/v1/auth/login'])
+            self.assertTrue(self.returned.wait(4))
             self.assertIsNone(b.client)
             self.delay = 0
             with patch.object(bridge, 'AUTH_TIMEOUT', 3):
@@ -160,14 +166,15 @@ class WindowsAuth(unittest.TestCase):
             p = original(command, env, **kwargs)
             processes.append(p)
             return p
-        self.delay = .8
+        self.delay = 3
         before = handles()
         with patch.object(auth, 'OwnedProcess', spawn):
             with self.assertRaises(Expired):
-                self.call(seconds=.3)
+                self.call(seconds=2)
         self.assertTrue(all(p.poll() is not None for p in processes))
         self.assertTrue(all(s.closed for p in processes for s in (p.stdin, p.stdout, p.stderr)))
-        self.assertTrue(self.returned.wait(2))
+        self.assertEqual(self.requests, ['/v1/auth/login'])
+        self.assertTrue(self.returned.wait(4))
         processes.clear()
         gc.collect()
         # Server-side accepted sockets have also finished by this point.

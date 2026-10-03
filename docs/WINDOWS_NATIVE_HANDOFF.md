@@ -1,5 +1,49 @@
 # JV CLI Windows native development handoff
 
+## Official Windows release preparation - 2026-10-03
+
+Release work started clean at feature `4a00ee480db70d5bcac619d95afa64056cd1905c`
+and main `b891df33365080af9ff587d69d74a434b79087ba`. The operator separately
+authorized merging and publishing a new release; historical v0.4.9 is unchanged.
+Canonical VERSION is now 0.5.0, a minor release for official native Windows AMD64
+support. Engine 0.149.1, bridge protocol 1, Linux permission defaults and accepted
+Windows runtime/installer architecture remain unchanged.
+
+The release workflow rehearses on feature/main and builds Linux normal/offline
+ZIPs and Windows portable/lowest-privilege Inno setup concurrently. It has one
+tag-only publisher. Actions are SHA-pinned. Exact inventories, archive manifests,
+source identity, version, size and SHA256 are verified before assembly and after
+public redownload. BUILD-INFO.json and SHA256SUMS describe both platforms; legacy
+Linux per-ZIP checksums remain available. Tag publication requires the exact green
+main regression/package runs and refuses an existing release. See RELEASING.md.
+
+Native local preparation evidence (Python 3.10.11, ordinary Windows account):
+
+- `py -3.10 -B scripts/windows_preflight.py`: 91 shared tests, zero skips.
+- `py -3.10 -B scripts/windows_native_tests.py`: 192 tests, zero skips.
+- `py -3.10 -B scripts/windows_bridge_acceptance.py --engine <pinned executable>`:
+  all 192 categorized tests, 11 real-engine/public bridge lifecycle tests and
+  six PowerShell/Python/Node IPv4/IPv6 socket cases passed, zero skips.
+- `py -3.10 -B scripts/windows_package_acceptance.py --installer <0.5.0 setup> --portable <0.5.0 ZIP> --node <explicit fixture>`:
+  17 installed tests, zero skips, six socket cases, 19 bundled module origins;
+  console/Thai/Ctrl+C, doctor, portable integrity, active-use refusal, failed
+  replacement rollback, reinstall, unknown-file retention, PATH/state and
+  uninstall checks passed. External runtime dependencies were excluded.
+- New offline release inventory/publication contracts: 17 tests passed.
+- Actionlint and release shell syntax passed. Source manifest was regenerated.
+
+A release run exposed a test fixture race: a 300ms synthetic auth deadline could
+expire before a cold helper submitted any request. Late-response tests now use a
+two-second test deadline with a three-second server delay and require actual
+server acceptance/late completion. All seven native auth tests pass; product
+deadlines, ownership and token installation semantics are unchanged.
+
+Final feature/main CI, tag/publication and downloaded-public-byte acceptance are
+separate release gates, not inferred from these local results. Windows artifacts
+remain unsigned and trusted-host only. Restricted network denial stays unsupported
+and fail-closed. No real credentials, production login/jobs, external inference,
+Firewall/WFP, privileged service or JV Desktop source changes were used here.
+
 ## Windows package / installer checkpoint - 2026-10-02
 
 Started clean on `feature/windows-native` at local/fetched origin

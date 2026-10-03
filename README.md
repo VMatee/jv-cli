@@ -2,13 +2,14 @@
 
 An AI coding assistant for your terminal. Ask questions about a project, make changes, run checks, and return to saved work.
 
-**Source version: 0.4.9** · [Published releases](https://github.com/VMatee/jv-cli/releases/latest) · [What's new](docs/CHANGELOG.md)
+**Source version: 0.5.0** · [Published releases](https://github.com/VMatee/jv-cli/releases/latest) · [What's new](docs/CHANGELOG.md)
 
 ## Get started
 
 ### Windows dedicated workers
 
-For the unsigned Windows AMD64 development installer and portable bundle, see
+Download the Windows AMD64 installer or portable ZIP from
+[JV CLI Releases](https://github.com/VMatee/jv-cli/releases/latest). See
 [Windows installation](docs/WINDOWS_INSTALL.md). Windows workers must explicitly
 select `--execution-mode trusted-host`. The instructions below describe the Linux
 release.
@@ -38,8 +39,8 @@ The installer downloads the latest release and verifies its checksum. Installati
 Prefer a manual download? Get the ZIP and matching `.sha256` file from [Releases](https://github.com/VMatee/jv-cli/releases/latest), then:
 
 ```bash
-sha256sum -c jv-cli-0.4.9-linux-x86_64.zip.sha256
-unzip jv-cli-0.4.9-linux-x86_64.zip
+sha256sum -c jv-cli-0.5.0-linux-x86_64.zip.sha256
+unzip jv-cli-0.5.0-linux-x86_64.zip
 cd jv-cli
 ./verify.sh
 ./install.sh
@@ -49,11 +50,11 @@ Stop if verification fails. The application is installed under `~/.local/share/j
 
 ### Install without downloading dependencies
 
-Download `jv-cli-0.4.9-linux-x86_64-offline.zip` and its matching `.sha256` file from [Releases](https://github.com/VMatee/jv-cli/releases/latest). Copy both files to the Linux computer, then run:
+Download `jv-cli-0.5.0-linux-x86_64-offline.zip` and its matching `.sha256` file from [Releases](https://github.com/VMatee/jv-cli/releases/latest). Copy both files to the Linux computer, then run:
 
 ```bash
-sha256sum -c jv-cli-0.4.9-linux-x86_64-offline.zip.sha256
-unzip jv-cli-0.4.9-linux-x86_64-offline.zip
+sha256sum -c jv-cli-0.5.0-linux-x86_64-offline.zip.sha256
+unzip jv-cli-0.5.0-linux-x86_64-offline.zip
 cd jv-cli
 ./verify.sh
 ./install-offline.sh
@@ -106,7 +107,7 @@ In an interactive session, type `/` to see commands with Thai descriptions. Cont
 
 Use `--verbose` for more detail. `jvcli exec --json "Your task"` provides JSONL output for automation.
 
-## Workspace permissions
+## Linux workspace permissions
 
 | Mode | Workspace edits | Network access by project tools |
 | --- | --- | --- |
@@ -128,7 +129,7 @@ JVCLI_AGENT_API=1 jvcli exec --image screenshot.png "Improve the layout shown in
 
 Use up to four PNG, JPEG, or WebP images located inside your workspace. Symlinked image paths are rejected. Use the same mode when resuming the session. Availability depends on your account; ask your service administrator if a capability is unavailable.
 
-## Update or uninstall
+## Linux update or uninstall
 
 Close all JV CLI sessions, then download the new ZIP and checksum from [Releases](https://github.com/VMatee/jv-cli/releases/latest). Extract it into a new directory, verify it, and run:
 
@@ -163,8 +164,8 @@ See [LICENSE](LICENSE), [NOTICE](NOTICE), and [third-party notices](THIRD_PARTY_
 
 ## Desktop and machine integration
 
-JV CLI 0.4.9 adds `jvcli bridge --stdio`, a versioned machine NDJSON interface
-for Linux. Existing terminal commands remain compatible. Bridge authentication
+JV CLI provides `jvcli bridge --stdio`, a versioned machine NDJSON interface
+for Linux and explicitly selected Windows trusted-host workers. Existing terminal commands remain compatible. Bridge authentication
 is memory-only and does not persist passwords. Image requests through the bridge
 are deferred; terminal image support is unchanged. Integration developers should
 read [the protocol contract](docs/BRIDGE_PROTOCOL.md).

@@ -19,6 +19,7 @@ import unittest
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
+VERSION = (ROOT / 'VERSION').read_text(encoding='utf-8').strip().encode('ascii')
 
 
 def inner(app, node):
@@ -144,7 +145,7 @@ def outer(installer, portable, node):
             command(setup)
             print(f'INSTALL PASS; package files {verify_payload(app)}', flush=True)
             assert str(app) in user_path().split(';')
-            assert b'0.4.9' in command([app/'jvcli.exe','--version']).stdout
+            assert command([app/'jvcli.exe','--version']).stdout.strip() == b'JV CLI ' + VERSION
             assert b'bridge' in command([app/'jvcli.exe','--help']).stdout
             doctor = json.loads(command([app/'jvcli.exe','doctor','--json']).stdout)
             assert doctor['ok'] and doctor['engine_version'] == '0.149.1'
@@ -160,7 +161,7 @@ def outer(installer, portable, node):
             path_env = {**env, 'PATH': str(app)+os.pathsep+env['PATH']}
             found = subprocess.run([str(ps), '-NoProfile', '-Command', 'jvcli --version'],
                                    env=path_env, cwd=root, capture_output=True, timeout=10)
-            assert found.returncode == 0 and b'0.4.9' in found.stdout
+            assert found.returncode == 0 and found.stdout.strip() == b'JV CLI ' + VERSION
             startup = subprocess.STARTUPINFO()
             startup.dwFlags = subprocess.STARTF_USESHOWWINDOW
             startup.wShowWindow = 0
@@ -195,7 +196,7 @@ def outer(installer, portable, node):
             finally:
                 os.close(fd)
             verify_payload(app)
-            assert b'0.4.9' in command([app/'jvcli.exe','--version']).stdout
+            assert command([app/'jvcli.exe','--version']).stdout.strip() == b'JV CLI ' + VERSION
             print('FAILED UPGRADE / ROLLBACK: PASS', flush=True)
             command(setup)
             verify_payload(app)
@@ -228,7 +229,7 @@ def outer(installer, portable, node):
                     seen.add(item.filename.casefold())
                     archive.extract(item, extracted)
             verify_payload(extracted)
-            assert b'0.4.9' in command([extracted/'jvcli.exe','--version']).stdout
+            assert command([extracted/'jvcli.exe','--version']).stdout.strip() == b'JV CLI ' + VERSION
             print('PORTABLE EXTRACTION / VERSION / MANIFEST: PASS', flush=True)
             (app/'unknown-user-file.txt').write_text('PRESERVE')
             unknown_created = True

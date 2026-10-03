@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 - native Windows workers
+
+- Add per-user Windows AMD64 installation and a portable ZIP with the required runtime included.
+- Support explicit trusted-host execution on dedicated Windows worker accounts: full tool filesystem access, network enabled, and no approval prompts.
+- Preserve separate private state, saved sessions and bounded bridge/process cleanup.
+- Keep Linux installation and permission modes unchanged.
+- Windows requests requiring network isolation remain unsupported and fail closed.
+
 ## 0.4.9 — machine stdio bridge
 
 Adds the Linux `jvcli bridge --stdio` NDJSON interface with memory-only bridge

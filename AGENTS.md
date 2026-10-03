@@ -6,10 +6,11 @@ Read `README.md`, the relevant source and tests, and this guide before making ch
 
 On `feature/windows-native`, read `docs/WINDOWS_NATIVE_HANDOFF.md` first and
 continue in this repository only. This branch prepares one shared JV CLI product;
-Windows native security, execution, bridge pipes, and installation are unfinished.
+Windows native security, trusted-host execution, bridge pipes and installation
+have native offline acceptance.
 `scripts/windows_preflight.py` proves imports and selected shared contracts only.
 Implement and validate native behavior on Windows with synthetic accounts and
-disposable state. Keep Linux semantics, version 0.4.9, engine 0.149.1, and bridge
+disposable state. Keep Linux semantics, the canonical VERSION, engine 0.149.1, and bridge
 protocol 1. Do not contact production during development or merge into main until
 offline acceptance passes. Live acceptance, releases, and merges need their own
 authorization. The historical `feature/windows-powershell` branch is reference only.

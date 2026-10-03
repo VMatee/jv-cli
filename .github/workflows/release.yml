@@ -1,76 +1,88 @@
 name: JV CLI release
-
 on:
   push:
-    tags:
-      - "v*.*.*"
-
+    branches: [main, feature/windows-native]
+    tags: ['v*.*.*']
+  workflow_dispatch:
 permissions:
-  contents: write
-
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  release:
+  verify:
     runs-on: ubuntu-22.04
-    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Check tag and canonical version
-        run: test "v$(cat VERSION)" = "$GITHUB_REF_NAME"
-      - name: Run complete tests
-        run: ./test.sh
-      - name: Verify package source
-        run: ./verify.sh
-      - name: Install application in portable mode
-        run: ./install.sh --portable
-      - name: Run execution acceptance
-        run: python3 -B scripts/engine_smoke.py
-      - name: Run session and completion checks
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: {python-version: '3.12'}
+      - run: python -B scripts/manage.py verify
+      - run: python -B -m unittest discover -s tests -p "test_release*.py" -v
+      - name: Canonical tag and exact green main gate
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: python -B scripts/release_gate.py
+  linux:
+    needs: verify
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: {python-version: '3.12'}
+      - run: ./test.sh
+      - run: ./verify.sh
+      - run: ./install.sh --portable
+      - name: Pinned engine synthetic execution and sessions
         run: |
-          python3 -B scripts/agent_smoke.py --engine "$PWD/runtime/node_modules/.bin/codex"
-          python3 -B scripts/completion_smoke.py --engine "$PWD/runtime/node_modules/.bin/codex"
-      - name: Build release
-        run: ./scripts/build-release.sh
-      - name: Build offline release
-        run: ./scripts/build-offline-release.sh
-      - name: Verify checksum
+          python -B scripts/engine_smoke.py
+          python -B scripts/agent_smoke.py --engine "$PWD/runtime/node_modules/.bin/codex"
+          python -B scripts/completion_smoke.py --engine "$PWD/runtime/node_modules/.bin/codex"
+      - run: ./scripts/build-release.sh
+      - run: ./scripts/build-offline-release.sh
+      - run: bash scripts/release_linux_acceptance.sh
+      - run: python -B scripts/release_assets.py collect --source dist --output artifacts/linux --platform linux --version "$(cat VERSION)" --commit "$GITHUB_SHA"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with: {name: linux, path: 'artifacts/linux/*', if-no-files-found: error}
+  windows:
+    needs: verify
+    uses: ./.github/workflows/windows-package.yml
+  assemble:
+    needs: [linux, windows]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: {python-version: '3.12'}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with: {pattern: '{linux,windows}', path: artifacts}
+      - run: python -B scripts/release_assets.py assemble --source artifacts --output release --version "$(cat VERSION)" --commit "$GITHUB_SHA"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with: {name: release, path: 'release/*', if-no-files-found: error}
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [verify, linux, windows, assemble]
+    runs-on: ubuntu-22.04
+    permissions: {contents: write}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: {persist-credentials: false}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with: {name: release, path: release}
+      - name: Publish once after verification
+        env: {GH_TOKEN: '${{ github.token }}'}
         run: |
-          cd dist
-          sha256sum -c "jv-cli-$(cat ../VERSION)-linux-x86_64.zip.sha256"
-          sha256sum -c "jv-cli-$(cat ../VERSION)-linux-x86_64-offline.zip.sha256"
-      - name: Verify extracted release
+          python3 -B scripts/release_gate.py
+          python3 -B scripts/release_assets.py verify --output release --version "$(cat VERSION)" --commit "$GITHUB_SHA"
+          gh release create "$GITHUB_REF_NAME" release/* --verify-tag --latest --title "JV CLI $(cat VERSION)" --notes-file "docs/releases/$(cat VERSION).md"
+      - name: Redownload public bytes twice
+        env: {GH_TOKEN: '${{ github.token }}'}
         run: |
-          directory=$(mktemp -d)
-          unzip -q "dist/jv-cli-$(cat VERSION)-linux-x86_64.zip" -d "$directory"
-          "$directory/jv-cli/verify.sh"
-      - name: Verify offline installation with a temporary home
-        run: |
-          directory=$(mktemp -d)
-          mkdir -p "$directory/home" "$directory/no-downloads"
-          unzip -q "dist/jv-cli-$(cat VERSION)-linux-x86_64-offline.zip" -d "$directory"
-          "$directory/jv-cli/verify.sh"
-          for command in node npm curl; do
-            printf '#!/bin/sh\nexit 97\n' > "$directory/no-downloads/$command"
-            chmod +x "$directory/no-downloads/$command"
+          for round in 1 2; do
+            gh release download "$GITHUB_REF_NAME" --dir "public-$round"
+            python3 -B scripts/release_assets.py verify --output "public-$round" --version "$(cat VERSION)" --commit "$GITHUB_SHA"
+            cmp release/SHA256SUMS "public-$round/SHA256SUMS"
+            cmp release/BUILD-INFO.json "public-$round/BUILD-INFO.json"
           done
-          HOME="$directory/home" PATH="$directory/no-downloads:$PATH" \
-            "$directory/jv-cli/install-offline.sh"
-          HOME="$directory/home" PATH="$directory/no-downloads:$PATH" \
-            "$directory/home/.local/bin/jvcli" doctor
-          HOME="$directory/home" PATH="$directory/no-downloads:$PATH" \
-            python3 -B "$directory/home/.local/share/jv-cli/scripts/engine_smoke.py"
-      - name: Create GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          version=$(cat VERSION)
-          assets=(
-            "dist/jv-cli-$version-linux-x86_64.zip"
-            "dist/jv-cli-$version-linux-x86_64.zip.sha256"
-            "dist/jv-cli-$version-linux-x86_64-offline.zip"
-            "dist/jv-cli-$version-linux-x86_64-offline.zip.sha256"
-          )
-          gh release create "$GITHUB_REF_NAME" "${assets[@]}" --verify-tag --latest \
-            --title "JV CLI $version" --notes-file "docs/releases/$version.md"

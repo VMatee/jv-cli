@@ -45,7 +45,7 @@ JVCLI_WAIT_TIMEOUT=600 jvcli
 
 A timeout stops local waiting; it does not guarantee remote work was cancelled. Check the known request/session before submitting the same task again.
 
-## Permissions
+## Linux permissions
 
 Normal sessions can edit the selected workspace and use network-enabled project tools. Use `--read-only` for inspection or `--no-network` to disable project-tool networking. The JV service connection still requires internet access.
 
@@ -76,7 +76,7 @@ on stderr; bridge stdout remains protocol-only. The profile runs unattended.
 are rejected in trusted-host mode. Windows network-denied execution remains
 unsupported and fails closed. Do not select trusted-host for untrusted tasks
 that require filesystem or network containment. Existing Linux permission
-defaults are unchanged. Windows installer and release-package support are separate.
+defaults are unchanged. See [Windows installation](WINDOWS_INSTALL.md) for the bundled runtime and per-user installer.
 
 ## Images and saved sessions
 

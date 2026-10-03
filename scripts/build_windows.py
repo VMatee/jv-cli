@@ -144,7 +144,10 @@ def main():
                 with archive.extractfile(member) as source, target.open('wb') as output:
                     shutil.copyfileobj(source, output)
         write(app / 'use.lock', '')
-        write(app / 'BUILD.json', json.dumps({'version': version, 'engine': '0.149.1', 'python': '3.10.11',
+        commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+        if len(commit) != 40 or any(c not in '0123456789abcdef' for c in commit):
+            raise ValueError('Invalid source commit')
+        write(app / 'BUILD.json', json.dumps({'version': version, 'source_commit': commit, 'engine': '0.149.1', 'python': '3.10.11',
               'architecture': 'AMD64', 'signed': False, 'source_manifest_sha256': digest(ROOT / 'MANIFEST.sha256'),
               'inputs': {n: pin[1] for n, pin in PINS.items()}}, indent=2)+'\n')
         shutil.copyfile(ROOT / 'docs/WINDOWS_INSTALL.md', app / 'WINDOWS_INSTALL.md')

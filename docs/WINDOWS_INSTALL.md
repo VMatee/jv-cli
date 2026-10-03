@@ -1,15 +1,16 @@
-# Windows installation (development build)
+# Windows installation
 
 JV CLI supports dedicated Windows 10/11 AMD64 worker PCs using an ordinary
-Windows account. These development artifacts are unsigned. Keep Windows Firewall
+Windows account. The Windows installer is unsigned; Windows may show SmartScreen or publisher
+warnings. SHA-256 verifies the downloaded bytes, not publisher identity. Keep Windows Firewall
 enabled. No Administrator account, service or separate Python, Node or Codex
 installation is needed.
 
 ## Install
 
-Verify the downloaded artifact against `SHA256SUMS.txt` with
+Verify the downloaded artifact against `SHA256SUMS` from the same release with
 `Get-FileHash -Algorithm SHA256`, then run
-`jv-cli-0.4.9-windows-x86_64-setup.exe`. The default per-user application directory
+`jv-cli-0.5.0-windows-x86_64-setup.exe`. The default per-user application directory
 is `%LOCALAPPDATA%\Programs\JV CLI`. The PATH option adds that directory to your
 user PATH; open a new terminal afterward. Unattended installation accepts
 `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART`.
@@ -57,5 +58,5 @@ and confirm clean exit. Use synthetic accounts and loopback fixtures for full
 acceptance. Repeat setup, then uninstall, confirming a disposable `JVCLI_HOME`
 is preserved. No real credentials or production jobs are required.
 
-Desktop should launch the installed `jvcli.exe bridge --stdio --execution-mode
-trusted-host`; Desktop integration is a separate milestone.
+Install JV Desktop separately; it uses its own private CLI state and launches
+`jvcli.exe bridge --stdio --execution-mode trusted-host`.

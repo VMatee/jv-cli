@@ -1,8 +1,8 @@
-# Stdio bridge protocol 1 — development contract
+# Stdio bridge protocol 1
 
-JV CLI **0.4.9** introduces this machine interface for Linux and explicitly selected Windows trusted-host workers. Protocol version is
-independently **1**. Validation uses synthetic dependencies; production Desktop
-acceptance has not been performed.
+JV CLI **0.4.9** introduced this machine interface for Linux; **0.5.0** adds
+official Windows trusted-host packages. Protocol version remains **1**.
+Ordinary verification uses synthetic dependencies, never production accounts.
 
 ## Invocation and isolation
 
@@ -21,8 +21,7 @@ Windows dedicated workers explicitly select `jvcli bridge --stdio --execution-mo
 This immutable process option enables unrestricted tool filesystem/network access
 and no approvals; it is never a fallback. Omitted mode preserves Linux defaults
 and leaves Windows secure sessions unavailable. Mode status goes to stderr.
-Desktop integration, PTY/ConPTY, images, bridge transport alternatives, and remote
-cancellation are deferred. Do not connect Desktop or a live account as part of ordinary tests.
+PTY/ConPTY, images, bridge transport alternatives and remote cancellation are deferred. Do not connect Desktop or a live account as part of ordinary tests.
 
 ## Wire rules
 
@@ -78,7 +77,7 @@ Shutdown is accepted in every ready state. Invalid state transitions return erro
 Startup frame:
 
 ```json
-{"type":"bridge.ready","protocol":1,"cli_version":"0.4.9","workspace":"/absolute/project","capabilities":{"auth":"stdio-memory","session":true,"resume":true,"cancel":"local","images":false,"thread_new":true}}
+{"type":"bridge.ready","protocol":1,"cli_version":"0.5.0","workspace":"/absolute/project","capabilities":{"auth":"stdio-memory","session":true,"resume":true,"cancel":"local","images":false,"thread_new":true}}
 ```
 
 ### Authentication
@@ -252,6 +251,6 @@ cleanup, EOF, broken stdout, backpressure, and secret exclusion from output,
 metadata, argv, and engine environment.
 Windows trusted-host acceptance uses the public parser/stdio path, a loopback fake
 JV service, and real pinned engine tools; see `scripts/windows_bridge_acceptance.py`. Existing terminal regression tests remain
-mandatory. Real production acceptance, Desktop consumption, images, installed Windows packages,
-remote job cancellation, and any release/version bump require later milestones.
+mandatory. Live service acceptance requires separate authorization. Images and remote job
+cancellation remain unsupported; ordinary package tests use synthetic services.
 See [Milestone 3B review](BRIDGE_REVIEW.md) for adversarial findings and evidence.
