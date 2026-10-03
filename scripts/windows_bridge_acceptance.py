@@ -94,6 +94,7 @@ def main():
         ('journal durability', ('test_windows_journal',)),
         ('execution policy', ('test_execution_policy',)),
         ('package integrity', ('test_windows_packaging',)),
+        ('public remote support/status', ('test_public_errors',)),
     ):
         result = unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.loadTestsFromNames(names))
         ok = result.wasSuccessful() and not result.skipped

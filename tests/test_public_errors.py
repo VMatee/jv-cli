@@ -1,5 +1,6 @@
 """Synthetic remote failures through transport, adapter HTTP, session and bridge."""
 import io
+from contextlib import contextmanager
 import json
 from pathlib import Path
 import sys
@@ -18,12 +19,24 @@ from jvcli.bridge import Bridge
 from jvcli.safety import JvError, RemoteInferenceError, public_remote_error
 from jvcli.structured import StructuredProcessor
 from jvcli.transport import JvApiClient, JvClientConfig
+from jvcli.safety import private_dir
 
 AUTH = 'The AI service requires administrator authentication.'
 SECRET = '<html>selector=#private token=SECRET https://private/credential</html>'
 
 
 class PublicErrors(unittest.TestCase):
+    @contextmanager
+    def private_state(self):
+        # SessionRuntime persists metadata through the real platform boundary.
+        # A default Windows temporary directory does not have a private DACL.
+        with tempfile.TemporaryDirectory(prefix='staging-public-errors-',
+                                         dir=Path(__file__).resolve().parents[1]) as td:
+            if sys.platform == 'win32':
+                from windows_test_support import trusted_fixture_directory
+                trusted_fixture_directory(td)
+            yield private_dir(Path(td) / 'state')
+
     def test_validation_and_message_vocabulary(self):
         for code in ['JV-SVC-103', 'JV-SVC-002', 'JV-TIMEOUT-001', 'JV-FUTURE-999',
                      'JV-AGENT-PROVIDER-CLEANUP-001']:
@@ -67,7 +80,7 @@ class PublicErrors(unittest.TestCase):
         cases = [('failed', code) for code in ['JV-SVC-103', 'JV-SVC-002', 'JV-TIMEOUT-001', 'malformed']]
         cases += [('structured', code) for code in ['JV-SVC-103', 'JV-SVC-002', 'JV-TIMEOUT-001']]
         for status, code in cases:
-            with self.subTest(status=status, code=code), tempfile.TemporaryDirectory() as td:
+            with self.subTest(status=status, code=code), self.private_state() as td:
                 client = self.client({'status': status, 'error_code': code,
                                       'error_message': AUTH if code == 'JV-SVC-103' else SECRET})
                 processor = None
@@ -128,7 +141,7 @@ class PublicErrors(unittest.TestCase):
 
     def test_waiting_status_survives_recovery_failure_or_cancellation(self):
         for outcome in ('succeeded', 'failed', 'cancelled'):
-            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as td:
+            with self.subTest(outcome=outcome), self.private_state() as td:
                 client = self.client({})
                 client.config.wait_timeout = None
                 waiting_seen, resume, running_seen, finish = [threading.Event() for _ in range(4)]

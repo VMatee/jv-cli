@@ -1,5 +1,31 @@
 # JV CLI Windows native development handoff
 
+## Remote support-code Windows acceptance - 2026-10-04
+
+The clean checkout fast-forwarded from
+`686c73cc46e9900f29c80e4d94430f814faae94a` to the exact Linux handoff
+`96755e5f1f93f9b10f7d54ae128566cc1a63c4c7`. No unpublished Windows work existed.
+The runtime is unchanged from that handoff. The public-error test fixture needed
+a native private state directory: default temporary directories correctly fail
+protected-DACL validation when SessionRuntime saves metadata. The fixture now
+prepares a disposable trusted parent and private state through existing APIs;
+production ACL validation is unchanged.
+
+Both Windows gates now include the five public-error tests. They cover typed
+remote errors, malformed/unreviewed fields, one submission during authentication
+attention/recovery, cancellation, and clearing remote errors on a local failure.
+Preflight: 91; native/shared: 197; real-engine public bridge: 11 plus six IPv4/IPv6
+PowerShell/Python/Node connections. Zero skips. Installed-package acceptance:
+17 tests, six socket cases, 19 installed module origins, and installer/portable/
+reinstall/rollback/state/PATH cleanup pass.
+
+Unsigned local 0.5.0 artifacts were built from the exact handoff above. BUILD.json
+records that commit, engine 0.149.1 and embedded Python 3.10.11. They are validation
+artifacts, not replacements for v0.5.0 public assets. Protocol remains 1 and
+trusted-host explicit. No production authentication, real account, inference,
+server modification or version/tag/release change occurred. The unauthenticated
+GitHub Actions API returned 404; remote CI is not inferred from local results.
+
 ## Official Windows release preparation - 2026-10-03
 
 Release work started clean at feature `4a00ee480db70d5bcac619d95afa64056cd1905c`
