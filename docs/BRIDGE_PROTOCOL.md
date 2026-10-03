@@ -234,7 +234,7 @@ cancellation, EOF, broken pipe, and shutdown verify cleanup and process terminat
 `invalid_session`, `workspace_error`, `engine_error`, `cancel_error`,
 `internal_error`, `input_limit`, `unsupported_capability`. Session setup errors are deliberately grouped as
 `invalid_session` to avoid leaking arbitrary engine/path/server exception text.
-`engine_error` is also the terminal `turn.failed` code.
+`engine_error` remains the terminal `turn.failed` code; optional public remote details are described below.
 
 ## Offline verification
 
@@ -254,3 +254,76 @@ JV service, and real pinned engine tools; see `scripts/windows_bridge_acceptance
 mandatory. Live service acceptance requires separate authorization. Images and remote job
 cancellation remain unsupported; ordinary package tests use synthetic services.
 See [Milestone 3B review](BRIDGE_REVIEW.md) for adversarial findings and evidence.
+
+### Optional public remote failure details (protocol 1)
+
+`turn.failed` retains `code: engine_error` and the existing fixed `message` for
+older consumers. When the current remote job/response supplies a validated public
+code, it additionally carries `source: remote`, `support_code`, and optionally
+`public_message`. No version bump or provider-code mapping is involved.
+
+```json
+{"type":"turn.failed","request_id":"turn1","turn_id":"generated_id","code":"engine_error","message":"The local engine did not complete the turn","source":"remote","support_code":"JV-SVC-103","public_message":"The AI service requires administrator authentication."}
+```
+
+Codes must fully match `JV-(?:[A-Z]{1,16}-){1,3}[0-9]{3}` and be at most 32 ASCII
+characters. Future codes matching that grammar pass through without interpretation;
+malformed codes are omitted. The nested public `error.code`/`error.message` fields
+(or flat `error_code`/`error_message`) are the only inputs. Diagnostics, exception
+text, engine text and stderr are never searched for support codes.
+
+Messages are optional, limited to 256 bytes and accepted only by exact membership
+in this reviewed public vocabulary (not a code-to-message mapping):
+
+- `The AI service requires administrator authentication.`
+- `The service restarted after submission. The request was not sent again to prevent a duplicate.`
+- `Provider job failed.`
+- `Provider is temporarily unavailable.`
+
+Unknown prose is omitted; consumers show a generic explanation with the code.
+The adapter retains typed remote failure data in memory for the current turn;
+starting another turn clears it. The structured processor keeps its existing
+retry-safety classification independently of these display fields.
+
+### Nonterminal remote status (protocol 1)
+
+`waiting_for_auth` is a recoverable server state, not a terminal failure. The
+provider's authentication refresh requeues the same job; Central can then expose
+running and finally succeeded/failed. Both terminal and bridge clients continue
+polling that same job. They do not cancel, resubmit, or invent a terminal state.
+
+An enhanced bridge emits an optional `turn.status` event:
+
+```json
+{"type":"turn.status","turn_id":"generated_id","source":"remote","status":"waiting_for_auth","support_code":"JV-SVC-103","public_message":"The AI service requires administrator authentication."}
+```
+
+`status` is exactly `waiting_for_auth` or `running`. `source` is exactly `remote`.
+Waiting can carry the same optional validated support fields described above;
+an absent/malformed code or unreviewed message cannot end the turn. A subsequent
+`running` status clears the waiting notice and carries no support fields. Here
+`running` means the remote job is no longer waiting for authentication (including
+requeue after refresh); it does not assert that provider generation has begun.
+
+The adapter publishes a single immutable status snapshot. The bridge owner
+coalesces and deduplicates it during its existing polling loop. This bounds memory
+and prevents repeated polls from filling the event stream. Very brief transitions
+may be coalesced; terminal completion/failure/cancellation takes precedence.
+Status snapshots and deduplication state are reset for every turn. No callback
+from a provider worker can emit events after a terminal turn frame.
+
+Only `turn.completed`, `turn.failed`, or `turn.cancelled` ends the turn. A waiting
+turn remains busy, rejects another turn, and supports normal local cancellation.
+Existing local deadlines and process-failure handling remain in effect and do
+not classify authentication waiting as a terminal provider error. Older consumers
+may ignore `turn.status` and continue waiting under protocol 1.
+
+This notice uses explicit states from the jobs API. The opt-in structured Responses
+API currently exposes such nonterminal jobs only as `in_progress` with `error:null`;
+its client continues polling but cannot identify authentication waiting from that
+envelope. No provider state is inferred from text or support codes, and no server
+contract has been changed.
+
+Native Windows acceptance of the remote support-code and authentication-wait
+feature remains a separate downstream gate. Linux automated validation does not
+constitute Windows acceptance; no live service validation is implied.

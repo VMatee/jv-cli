@@ -18,7 +18,7 @@ import uuid
 
 from . import cli
 from .bridge_io import EOF, OVERSIZE, Emitter, LineReader
-from .safety import JvError, redact_data, strict_json, terminal_text
+from .safety import PublicRemoteError, public_remote_error, JvError, redact_data, strict_json, terminal_text
 from .transport import validate_base_url
 
 PROTOCOL = 1
@@ -164,6 +164,7 @@ class Bridge:
         self.stopping = False
         self.fatal = False
         self.closed = False
+        self.last_remote_status = None
 
     def emit(self, typ, **fields):
         frame = {'type': typ, **fields}
@@ -293,6 +294,8 @@ class Bridge:
                 self.session.new_thread()
                 self.emit('thread.started', request_id=rid, thread_id=None)
                 return
+            self.session.runtime.remote_status = None
+            self.last_remote_status = None
             self.turn_id = uuid.uuid4().hex
             self.turn_request = rid
             self.cancel = threading.Event()
@@ -326,10 +329,34 @@ class Bridge:
             del text
         self.results.put(rc)
 
+    def emit_remote_status(self):
+        if not self.worker or self.cancel.is_set():
+            return
+        snapshot = getattr(self.session.runtime, 'remote_status', None)
+        if not isinstance(snapshot, tuple) or len(snapshot) != 2:
+            return
+        status, remote = snapshot
+        if status not in ('waiting_for_auth', 'running'):
+            return
+        fields = {'source': 'remote', 'status': status}
+        if status == 'waiting_for_auth' and isinstance(remote, PublicRemoteError):
+            remote = public_remote_error({'error_code': remote.code, 'error_message': remote.message})
+            if remote is not None:
+                fields['support_code'] = remote.code
+                if remote.message is not None:
+                    fields['public_message'] = remote.message
+        if fields == self.last_remote_status:
+            return
+        initial_running = self.last_remote_status is None and status == 'running'
+        self.last_remote_status = fields
+        if not initial_running:
+            self.emit('turn.status', turn_id=self.turn_id, **fields)
+
     def reap(self):
         try:
             rc = self.results.get_nowait()
         except queue.Empty:
+            self.emit_remote_status()
             return
         self.worker.join()
         cancelled = self.cancel.is_set() or rc == 130
@@ -339,6 +366,14 @@ class Bridge:
             fields.update(local=True, remote_state='unknown')
         elif rc:
             fields.update(code='engine_error', message=ERRORS['engine_error'])
+            remote = getattr(self.session, 'remote_error', None)
+            if isinstance(remote, PublicRemoteError):
+                remote = public_remote_error({'error_code': remote.code,
+                                              'error_message': remote.message})
+                if remote is not None:
+                    fields.update(source='remote', support_code=remote.code)
+                    if remote.message is not None:
+                        fields['public_message'] = remote.message
         self.worker = None
         self.emit(typ, **fields)
 

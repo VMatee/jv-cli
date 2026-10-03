@@ -6,6 +6,7 @@ import math
 import os
 import re
 import stat
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -30,10 +31,44 @@ class UncertainToolSideEffect(ProtocolError):
     failure_code = "uncertain_tool_side_effect"
 
 
+# Public text is a vocabulary, not a provider-code mapping. Unknown prose is
+# never forwarded, even when it accompanies a syntactically valid support code.
+PUBLIC_ERROR_MESSAGES = frozenset({
+    "The AI service requires administrator authentication.",
+    "The service restarted after submission. The request was not sent again to prevent a duplicate.",
+    "Provider job failed.",
+    "Provider is temporarily unavailable.",
+})
+
+
+@dataclass(frozen=True)
+class PublicRemoteError:
+    code: str
+    message: str | None = None
+
+
+def public_remote_error(payload: Any) -> PublicRemoteError | None:
+    """Select only bounded public fields; never infer a code from diagnostics."""
+    if not isinstance(payload, dict):
+        return None
+    nested = payload.get("error")
+    nested = nested if isinstance(nested, dict) else {}
+    code = nested.get("code", payload.get("error_code"))
+    if (not isinstance(code, str) or len(code) > 32
+            or re.fullmatch(r"JV-(?:[A-Z]{1,16}-){1,3}[0-9]{3}", code) is None):
+        return None
+    message = nested.get("message", payload.get("error_message"))
+    if (not isinstance(message, str) or len(message) > 256
+            or message not in PUBLIC_ERROR_MESSAGES):
+        message = None
+    return PublicRemoteError(code, message)
+
+
 class RemoteInferenceError(JvError):
     """Terminal remote failure, with an allowlisted local classification."""
 
-    def __init__(self, failure_code: str, message: str):
+    def __init__(self, failure_code: str, message: str, *, public_error: PublicRemoteError | None = None):
+        self.public_error = public_error
         self.failure_code = failure_code
         super().__init__(message)
 

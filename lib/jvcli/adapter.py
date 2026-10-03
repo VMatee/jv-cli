@@ -14,7 +14,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from .safety import Cancelled, JvError, ProtocolError, SubmissionUncertain, strict_json
+from .safety import RemoteInferenceError, public_remote_error, Cancelled, JvError, ProtocolError, SubmissionUncertain, strict_json
 from .transport import DEFAULT_BASE_URL, MAX_JSON_BYTES, JvApiClient, JvClientConfig, validate_base_url
 from .protocol import (MAX_PROMPT_BYTES, build_jv_prompt, flatten_tools, parse_agent_output,
                        render_input_item, sanitize_internal_text, MAX_RESPONSE_REPAIRS,
@@ -83,6 +83,8 @@ class AdapterRuntime:
         self.last_job_id: str | None = None
         self.last_response_id: str | None = None
         self.last_error: str | None = None
+        self.remote_error = None
+        self.remote_status = None
         self.signatures: dict[str, int] = {}
         self.rust_discovery_probes = 0
         self.worker: threading.Thread | None = None
@@ -97,6 +99,8 @@ class AdapterRuntime:
         self.signatures = {}
         self.rust_discovery_probes = 0
         self.last_error = None
+        self.remote_error = None
+        self.remote_status = None
         self.last_job_id = None
         self.last_response_id = None
         self.response_repairs = 0
@@ -145,13 +149,20 @@ class AdapterRuntime:
 
         def progress(job):
             self.status = 'JV job ' + job['id'] + ': ' + job['status']
+            # One immutable, coalescing snapshot: no unbounded queue and no
+            # callbacks from the HTTP worker into bridge lifecycle management.
+            self.remote_status = (
+                ('waiting_for_auth', public_remote_error(job))
+                if job['status'] == 'waiting_for_auth' else ('running', None))
 
         terminal = self.client.wait_for_job(created['id'], cancel=self.cancel, progress=progress,
                                              conversation_id=created['conversation_id'])
         if self.cancel.is_set():
             raise Cancelled('Turn cancelled; remote work may have completed')
         if terminal['status'] != 'succeeded':
-            raise JvError(f'JV job {created["id"]} failed; use jvcli job {created["id"]} to inspect its status')
+            raise RemoteInferenceError('remote_job_failed',
+                                       f'JV job {created["id"]} failed; use jvcli job {created["id"]} to inspect its status',
+                                       public_error=public_remote_error(terminal))
         return terminal
 
     def infer(self, request: dict, prompt: str, catalog: dict) -> list[dict]:
@@ -371,6 +382,7 @@ class ResponsesAdapterHandler(BaseHTTPRequestHandler):
             self.close_connection = True
         except JvError as exc:
             self.runtime.last_error = str(exc)
+            self.runtime.remote_error = exc.public_error if isinstance(exc, RemoteInferenceError) else None
             if streaming:
                 try:
                     self._event({'type': 'error', 'code': 'jv_adapter_error', 'message': str(exc)})

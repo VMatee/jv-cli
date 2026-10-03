@@ -992,12 +992,18 @@ class SessionRuntime:
         self.read_only, self.allow_network = read_only, allow_network
         self.thread_id = metadata.get("thread_id")
 
+    @property
+    def remote_error(self):
+        """Current turn's validated remote failure, independent of engine output."""
+        return getattr(self, "_remote_error", None)
+
     def new_thread(self):
         if self.runtime.lock.locked():
             raise JvError("Previous request is still stopping")
         self.thread_id = None
 
     def run_turn(self, task, **options):
+        self._remote_error = None
         self.runtime.begin_turn()
         rc, new_thread = _run_engine(
             self.engine, task, self.thread_id, session_dir=self.session_dir,
@@ -1015,6 +1021,7 @@ class SessionRuntime:
         self.metadata["response_repairs"] = self.runtime.response_repairs
         atomic_write(self.session_dir / "session.json",
                      json.dumps(self.metadata, indent=2) + "\n")
+        self._remote_error = self.runtime.remote_error
         return rc
 
 

@@ -11,7 +11,7 @@ from typing import Any
 
 from .safety import (JvError, ProtocolError, SubmissionUncertain, atomic_write,
                      private_dir, read_private_json, strict_json,
-                     RemoteInferenceError, UncertainToolSideEffect)
+                     RemoteInferenceError, UncertainToolSideEffect, public_remote_error)
 from .images import validate_image_history, validate_image_request, validate_image_results
 
 STRUCTURED_AGENT_INSTRUCTIONS = '''You are JV CLI, a software-engineering agent in the user's selected workspace.
@@ -470,7 +470,7 @@ class StructuredProcessor:
             'agent_inference_failed',
             'Remote inference failed; submission safety is not established. '
             'Automatic retry is disabled; inspect the existing job.'))
-        return RemoteInferenceError(failure, message)
+        return RemoteInferenceError(failure, message, public_error=public_remote_error(payload))
 
     @staticmethod
     def _validate_envelope(payload: Any, expected_id: str | None = None) -> None:
