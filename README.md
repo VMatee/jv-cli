@@ -2,7 +2,7 @@
 
 An AI coding assistant for your terminal. Ask questions about a project, make changes, run checks, and return to saved work.
 
-**Source version: 0.5.0** · [Published releases](https://github.com/VMatee/jv-cli/releases/latest) · [What's new](docs/CHANGELOG.md)
+**Source version: 0.5.1** · [Published releases](https://github.com/VMatee/jv-cli/releases/latest) · [What's new](docs/CHANGELOG.md)
 
 ## Get started
 
@@ -39,8 +39,8 @@ The installer downloads the latest release and verifies its checksum. Installati
 Prefer a manual download? Get the ZIP and matching `.sha256` file from [Releases](https://github.com/VMatee/jv-cli/releases/latest), then:
 
 ```bash
-sha256sum -c jv-cli-0.5.0-linux-x86_64.zip.sha256
-unzip jv-cli-0.5.0-linux-x86_64.zip
+sha256sum -c jv-cli-0.5.1-linux-x86_64.zip.sha256
+unzip jv-cli-0.5.1-linux-x86_64.zip
 cd jv-cli
 ./verify.sh
 ./install.sh
@@ -50,11 +50,11 @@ Stop if verification fails. The application is installed under `~/.local/share/j
 
 ### Install without downloading dependencies
 
-Download `jv-cli-0.5.0-linux-x86_64-offline.zip` and its matching `.sha256` file from [Releases](https://github.com/VMatee/jv-cli/releases/latest). Copy both files to the Linux computer, then run:
+Download `jv-cli-0.5.1-linux-x86_64-offline.zip` and its matching `.sha256` file from [Releases](https://github.com/VMatee/jv-cli/releases/latest). Copy both files to the Linux computer, then run:
 
 ```bash
-sha256sum -c jv-cli-0.5.0-linux-x86_64-offline.zip.sha256
-unzip jv-cli-0.5.0-linux-x86_64-offline.zip
+sha256sum -c jv-cli-0.5.1-linux-x86_64-offline.zip.sha256
+unzip jv-cli-0.5.1-linux-x86_64-offline.zip
 cd jv-cli
 ./verify.sh
 ./install-offline.sh

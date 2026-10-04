@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1 - remote support codes and recovery status
+
+- Forward validated public JV support codes so compatible clients can show a code when remote work fails.
+- Report administrator authentication attention without ending the active turn. Continue polling the same remote job after recovery, without automatic resubmission.
+- Show only reviewed public explanations; keep provider diagnostics private and clear remote error state before the next turn.
+- Preserve bridge protocol 1 compatibility and existing Linux and Windows execution policies.
+
 ## 0.5.0 - native Windows workers
 
 - Add per-user Windows AMD64 installation and a portable ZIP with the required runtime included.
