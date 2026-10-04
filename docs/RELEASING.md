@@ -25,6 +25,10 @@ main commit. The single tag-only publisher checks those conditions and refuses
 an existing release. It publishes only after both platforms and assembly pass,
 then redownloads twice and compares hashes and metadata.
 
+The gate reads Actions metadata. Workflow permissions must include
+`contents: read` and `actions: read`; the publish job overrides that set with
+`contents: write` and `actions: read`. Keep both scopes explicit and least privilege.
+
 Finally download every public asset into a new disposable directory, verify
 inventory/checksums/source, and test the downloaded Windows installer itself.
 Installed acceptance includes version/help/doctor, engine discovery, synthetic
@@ -34,3 +38,10 @@ rollback, state/PATH boundaries, uninstall and portable extraction. Preserve
 unrelated files and leave the final public installation usable. Never inspect
 private account/session state. Signing, if later authorized, must happen before
 artifact hashing; unsigned Windows artifacts remain explicit.
+
+## Unpublished 0.5.1 tag
+
+`v0.5.1` contains the intended remote support-code functionality, but its tag
+workflow stopped at the release gate because the token lacked `actions: read`.
+No 0.5.1 GitHub Release assets were published. The tag remains immutable;
+0.5.2 carries the same accepted runtime plus corrected workflow permissions.

@@ -1,6 +1,15 @@
 # Changelog
 
-## 0.5.1 - remote support codes and recovery status
+## 0.5.2 - remote support codes and recovery status
+
+- Carry the same remote support-code reporting and same-job recovery intended for 0.5.1.
+- Correct release publication permissions so the existing verification gate can read Actions results before publishing packages.
+- Keep Linux and Windows execution policies unchanged.
+
+## 0.5.1 - unpublished tag: remote support codes and recovery status
+
+The tag was published, but its workflow stopped before any GitHub Release assets
+were published. See the [release history note](RELEASING.md#unpublished-051-tag).
 
 - Forward validated public JV support codes so compatible clients can show a code when remote work fails.
 - Report administrator authentication attention without ending the active turn. Continue polling the same remote job after recovery, without automatic resubmission.

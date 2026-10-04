@@ -10,7 +10,7 @@ installation is needed.
 
 Verify the downloaded artifact against `SHA256SUMS` from the same release with
 `Get-FileHash -Algorithm SHA256`, then run
-`jv-cli-0.5.1-windows-x86_64-setup.exe`. The default per-user application directory
+`jv-cli-0.5.2-windows-x86_64-setup.exe`. The default per-user application directory
 is `%LOCALAPPDATA%\Programs\JV CLI`. The PATH option adds that directory to your
 user PATH; open a new terminal afterward. Unattended installation accepts
 `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART`.
