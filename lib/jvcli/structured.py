@@ -262,7 +262,15 @@ class StructuredProcessor:
                         ({PATCH_GRAMMAR_SHA256, WINDOWS_PATCH_GRAMMAR_SHA256} if os.name == 'nt'
                          else {PATCH_GRAMMAR_SHA256})):
                     raise ProtocolError('apply_patch must use the exact certified Codex 0.149.1 custom declaration and grammar')
-                result.append(json.loads(_canonical(tool)))
+                # The server certifies the LF wire representation. The pinned
+                # Windows engine embeds the same grammar with CRLF. Accept only
+                # the exact certified engine bytes above, then canonicalize the
+                # declaration (never the model's freeform patch input).
+                entry = json.loads(_canonical(tool))
+                entry['format']['definition'] = grammar['definition'].replace('\r\n', '\n')
+                if hashlib.sha256(entry['format']['definition'].encode()).hexdigest() != PATCH_GRAMMAR_SHA256:
+                    raise ProtocolError('Canonical apply_patch grammar does not match the server contract')
+                result.append(entry)
                 schemas['apply_patch'] = {'type': 'custom'}
                 continue
             if tool.get('type') == 'function' and tool.get('name') == 'view_image':
