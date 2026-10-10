@@ -382,7 +382,7 @@ class ResponsesAdapterHandler(BaseHTTPRequestHandler):
             self.close_connection = True
         except JvError as exc:
             self.runtime.last_error = str(exc)
-            self.runtime.remote_error = exc.public_error if isinstance(exc, RemoteInferenceError) else None
+            self.runtime.remote_error = getattr(exc, 'public_error', None)
             if streaming:
                 try:
                     self._event({'type': 'error', 'code': 'jv_adapter_error', 'message': str(exc)})

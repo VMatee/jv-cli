@@ -148,6 +148,23 @@ class ProtocolHardening(unittest.TestCase):
         _,catalog=build_jv_prompt({'tools':TOOLS,'tool_choice':'none','input':'hi'})
         self.assertFalse(catalog)
 
+    def test_text_transport_does_not_offer_image_tool(self):
+        image_tool = {'type': 'function', 'name': 'view_image',
+                      'parameters': {'type': 'object', 'properties': {'path': {'type': 'string'}}}}
+        for tools in ([*TOOLS, image_tool], [*TOOLS, {'type': 'namespace', 'name': 'functions', 'tools': [image_tool]}]):
+            with self.subTest(tools=tools):
+                prompt, catalog = build_jv_prompt({'tools': tools, 'input': 'Check the game'})
+                self.assertNotIn('"name":"view_image"', prompt)
+                self.assertIn((None, 'shell_command'), catalog)
+                self.assertFalse(any(name == 'view_image' for _, name in catalog))
+                with self.assertRaisesRegex(ProtocolError, 'not offered'):
+                    parse_agent_output(json.dumps({'type': 'tool_call', 'name': 'view_image',
+                                                  'arguments': {'path': 'screenshot.png'}}), catalog)
+        # The shared catalog must still admit images for the structured transport.
+        self.assertIn((None, 'view_image'), flatten_tools([image_tool])[1])
+        with self.assertRaisesRegex(ProtocolError, 'no compatible tool'):
+            build_jv_prompt({'tools': [image_tool], 'tool_choice': 'required', 'input': 'Check'})
+
     def test_previous_response_id_explicitly_rejected(self):
         with self.assertRaises(ProtocolError): build_jv_prompt({'previous_response_id':'resp_old','input':[]})
 

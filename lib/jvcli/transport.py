@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .safety import (Cancelled, JvError, SubmissionUncertain, no_symlink_path,
-                     positive_number, private_dir, strict_json)
+                     positive_number, private_dir, strict_json, public_remote_error)
 
 DEFAULT_BASE_URL = "https://ai.openjvspace.com"
 MAX_JSON_BYTES = 8 * 1024 * 1024
@@ -168,10 +168,12 @@ class JvApiClient:
     @staticmethod
     def _http_error(operation, exc):
         public_detail = ""
+        support = None
         try:
             raw = exc.read(4097)
             if len(raw) <= 4096:
                 payload = strict_json(raw)
+                support = public_remote_error(payload)
                 value = payload.get("error") if isinstance(payload, dict) else None
                 if (isinstance(value, dict) and isinstance(value.get("code"), str)
                         and isinstance(value.get("message"), str)
@@ -183,6 +185,7 @@ class JvApiClient:
             pass
         error = HttpError(operation, exc.code,
                           _parse_retry_after(exc.headers.get("Retry-After")), public_detail)
+        error.public_error = support
         exc.close()
         return error
 

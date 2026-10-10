@@ -21,7 +21,7 @@ Windows dedicated workers explicitly select `jvcli bridge --stdio --execution-mo
 This immutable process option enables unrestricted tool filesystem/network access
 and no approvals; it is never a fallback. Omitted mode preserves Linux defaults
 and leaves Windows secure sessions unavailable. Mode status goes to stderr.
-PTY/ConPTY, images, bridge transport alternatives and remote cancellation are deferred. Do not connect Desktop or a live account as part of ordinary tests.
+PTY/ConPTY, user image attachments, alternative bridge transports and remote cancellation are deferred. Autonomous local image inspection is supported in explicitly selected structured sessions. Do not connect Desktop or a live account as part of ordinary tests.
 
 ## Wire rules
 
@@ -119,7 +119,22 @@ password or bearer token. Known token/adapter-key echoes are redacted from event
 
 ### Session
 
-`session.start` accepts optional `resume_session_id`, `read_only`, `allow_network`.
+`session.start` accepts optional `resume_session_id`, `read_only`, `allow_network`, and `transport`.
+`transport` is exactly `legacy` or `structured`. When omitted, the existing
+`JVCLI_AGENT_API` environment selection is preserved. An explicit choice overrides
+that environment for this session only and must match saved metadata on resume.
+New bridges advertise `capabilities.transports: ["legacy", "structured"]` and
+`capabilities.tool_images: true`. Parents must inspect these fields before sending
+the optional selection to an older bridge. `images: false` still means that the
+bridge accepts no user image attachments. The agent may call `view_image` in
+structured mode; validated PNG/JPEG/WebP results go directly from the engine
+through the private CLI adapter to the structured service, never through bridge
+status frames. Structured mode requires a compatible service/account. HTTP
+rejections preserve validated public support codes. Neither transport failure nor
+unsupported capability causes an automatic Legacy retry or changes the session
+mode. An operator may deliberately start a fresh Legacy session for text-only
+work after inspecting the failed request. Image-bearing saved history remains
+private and is not downgraded or discarded.
 Absent policy fields use existing CLI defaults (workspace-write with network;
 read-only defaults to no network), including when resuming. Read-only
 plus explicit network enable is rejected. Windows trusted-host is selected only at process startup, never by a request.
@@ -133,7 +148,7 @@ network denial remains unsupported; no request silently enables networking.
 
 `sandbox` is `read-only` or `workspace-write` for existing clients, or
 `danger-full-access` when the parent explicitly opted into trusted-host; `network` is boolean; `transport`
-reflects the existing selected mode, not a new bridge transport decision.
+reports the selected session mode; clients must verify it matches their request.
 `thread_id` is null or an existing engine thread ID matching the bounded ASCII
 identifier format and never starting with a hyphen. Engine thread events use
 the same check before any ID can become a positional resume argument.
@@ -327,3 +342,29 @@ contract has been changed.
 Native Windows acceptance of the remote support-code and authentication-wait
 feature remains a separate downstream gate. Linux automated validation does not
 constitute Windows acceptance; no live service validation is implied.
+
+### Opt-in Linux structured vision acceptance
+
+With the real pinned engine installed and existing Node, Playwright Chromium and
+Pillow available, run from the CLI repository:
+
+```sh
+python3 -B scripts/vision_bridge_smoke.py \
+  --node /absolute/path/to/node \
+  --playwright /absolute/path/to/node_modules/playwright \
+  --browsers /absolute/path/to/ms-playwright
+```
+
+This loopback synthetic provider generates/builds/tests a small website through
+real engine tools, captures PNG/JPEG and creates WebP, executes `view_image`,
+validates the three image results, requests a subsequent file edit and final
+tests, then restarts/resumes the bridge for another turn. It tests unsupported
+structured service reporting, bridge survival without automatic retry, and a
+fresh explicitly selected Legacy session. It checks bridge events for image or
+credential leakage. Private engine history intentionally retains image evidence.
+
+This proves native Linux execution and structured transport, not real-model
+visual understanding. It never uses a production account. Optional
+`--desktop-probe /absolute/path/to/vision_fixture` runs the Desktop Rust supervisor
+example for the two successful turns. Desktop's development guide also documents
+actual Linux Tauri GUI acceptance and the separate Windows-native handoff.

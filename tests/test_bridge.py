@@ -114,6 +114,33 @@ class Peer:
 
 
 class BridgeTests(unittest.TestCase):
+    def test_explicit_transport_overrides_environment_and_binds_resume(self):
+        p = self.peer()
+        self.assertEqual(p.login()['type'], 'auth.succeeded')
+        session = p.session(transport='structured')
+        self.assertEqual(session['transport'], 'structured')
+        sid = session['session_id']
+        self.assertEqual(p.stop(), 0)
+        q = self.peer(state=p.state)
+        q.login()
+        self.assertEqual(q.session(resume_session_id=sid, transport='legacy')['code'], 'invalid_session')
+        self.assertEqual(q.session(resume_session_id=sid, transport='structured')['transport'], 'structured')
+        self.assertEqual(q.stop(), 0)
+
+    def test_legacy_can_be_selected_without_changing_process_environment(self):
+        p = self.peer(structured=True)
+        p.login()
+        self.assertEqual(p.session(transport='legacy')['transport'], 'legacy')
+        self.assertEqual(p.stop(), 0)
+
+    def test_transport_selection_rejects_non_protocol_values(self):
+        p = self.peer()
+        p.login()
+        for value in ('auto', '', True, {}, [], None):
+            self.assertEqual(p.session(transport=value)['code'], 'invalid_request')
+        self.assertEqual(p.session(transport='structured')['transport'], 'structured')
+        self.assertEqual(p.stop(), 0)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

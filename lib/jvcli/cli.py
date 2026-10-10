@@ -858,6 +858,7 @@ def _session_runtime(
     images=(),
     account=None,
     execution_mode=None,
+    structured=None,
 ):
     from .execution_policy import resolve
     _, allow_network = resolve(execution_mode, read_only=read_only, allow_network=allow_network)
@@ -875,7 +876,10 @@ def _session_runtime(
             f"Engine {actual} is not the pinned {ENGINE_VERSION}; run ./install.sh. No automatic downgrade is performed at runtime"
         )
     base, user = _resolve_account() if account is None else (account[2], account[1])
-    structured = _structured_enabled()
+    if structured is None:
+        structured = _structured_enabled()
+    elif type(structured) is not bool:
+        raise JvError("Invalid session transport selection")
     if images and not structured:
         raise JvError(
             "--image requires JVCLI_AGENT_API=1; legacy ask --file remains available"

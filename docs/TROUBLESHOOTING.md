@@ -43,6 +43,15 @@ Use the same directory, account, service address, and optional task mode. Close 
 
 Check the file type, size, account capability, and path. Image-assisted tasks accept up to four PNG/JPEG/WebP images inside the workspace and reject symlinks. A filename extension alone does not make a format supported. Ask your administrator whether the required capability is enabled.
 
+Legacy text-only sessions, including Desktop sessions set to Legacy, cannot inspect
+screenshots with `view_image`. They use source and text-based checks instead.
+For autonomous screenshot inspection, use Structured mode in a compatible Desktop
+with an enabled service account, or `JVCLI_AGENT_API=1` in the CLI. Desktop chat
+image attachments are not supported.
+If an older Legacy session stopped after an image-viewing action, upgrade JV CLI and
+start a fresh session in the same project folder. Review the existing files and
+continue from them; reopening the folder does not undo completed edits.
+
 ## An update is refused
 
 Close running JV CLI sessions and verify the new package before retrying. Preserve any locally modified source files. Never overwrite a modified checkout or delete application state to make an update proceed.

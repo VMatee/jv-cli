@@ -166,6 +166,7 @@ See [LICENSE](LICENSE), [NOTICE](NOTICE), and [third-party notices](THIRD_PARTY_
 
 JV CLI provides `jvcli bridge --stdio`, a versioned machine NDJSON interface
 for Linux and explicitly selected Windows trusted-host workers. Existing terminal commands remain compatible. Bridge authentication
-is memory-only and does not persist passwords. Image requests through the bridge
-are deferred; terminal image support is unchanged. Integration developers should
+is memory-only and does not persist passwords. Structured bridge sessions support autonomous local `view_image` inspection through
+the CLI image pipeline. User image attachments over bridge requests remain unavailable;
+terminal image support is unchanged. Integration developers should
 read [the protocol contract](docs/BRIDGE_PROTOCOL.md).

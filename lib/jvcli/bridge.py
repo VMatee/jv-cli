@@ -55,7 +55,7 @@ ERRORS = {
 }
 SCHEMAS = {
     'auth.login': ({'username', 'base_url', 'password'}, set()),
-    'session.start': (set(), {'resume_session_id', 'read_only', 'allow_network'}),
+    'session.start': (set(), {'resume_session_id', 'read_only', 'allow_network', 'transport'}),
     'turn.start': ({'text'}, set()),
     'turn.cancel': ({'turn_id'}, set()),
     'thread.new': (set(), set()),
@@ -100,6 +100,8 @@ def validate(request):
                 and string(request['password'], 16384, controls=True)):
             raise RequestError('invalid_request')
     if typ == 'session.start':
+        if 'transport' in request and request['transport'] not in ('legacy', 'structured'):
+            raise RequestError('invalid_request')
         if any(type(request[k]) is not bool for k in ('read_only', 'allow_network') if k in request):
             raise RequestError('invalid_request')
         if 'resume_session_id' in request and not identifier(request['resume_session_id']):
@@ -256,6 +258,8 @@ class Bridge:
                 except UnsupportedCapability:
                     raise RequestError("unsupported_capability") from None
                 policy = {"execution_mode": self.execution_mode} if self.execution_mode else {}
+                if 'transport' in request:
+                    policy['structured'] = request['transport'] == 'structured'
                 try:
                     self.context = self.session_factory(
                         resume=request.get('resume_session_id'),
@@ -431,7 +435,8 @@ def serve(*, input_fd=None, output_fd=None, client_factory=None, session_factory
         bridge.emit('bridge.ready', protocol=PROTOCOL, cli_version=cli.VERSION,
                     workspace=str(workspace), capabilities={'auth': 'stdio-memory',
                     'session': True, 'resume': True, 'cancel': 'local', 'images': False,
-                    'thread_new': True})
+                    'thread_new': True, 'transports': ['legacy', 'structured'],
+                    'tool_images': True})
         reader = LineReader(sys.stdin.fileno() if input_fd is None else input_fd)
         while not signalled and not bridge.stopping and not output.failed.is_set():
             bridge.reap()

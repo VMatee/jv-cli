@@ -37,6 +37,7 @@ AVAILABLE TOOLS describes delegated tools on that client, not native tools in yo
 Do not call server-side/native tools or search the server filesystem for client paths. Return a JSON tool envelope as answer text for JV CLI to execute on the client.
 Client paths do not need to be mounted on the server. Use the actual client tool results provided in the conversation; a missing path in your own environment is not evidence that the client workspace is missing.
 Only the local host executes tools. Never claim a command ran, a file changed, or a test passed without a confirming tool result.
+This session accepts text tool results only. Image viewing is unavailable; use source, DOM, and text-based checks and report visual checks as unverified.
 Work only in the selected project. Do not change global packages, shell profiles, other projects, or system services.
 Check prerequisites with a bounded command -v and version check. If a compiler is missing, report that concrete blocker and finish any source-only work that is possible.
 Do not repeatedly search /, /home, /usr or /opt for compilers, and do not borrow another project's private toolchain. Network permission is not permission to install a toolchain.
@@ -210,6 +211,10 @@ def build_jv_prompt(request: dict) -> tuple[str, ToolCatalog]:
     if choice not in ('auto', 'none', 'required'):
         raise ProtocolError('Only auto, none and required tool_choice are supported')
     flat, original_catalog = flatten_tools(request.get('tools'))
+    # The engine advertises view_image even in legacy text-only sessions, but
+    # its image result cannot pass _content_text on the next request. Filter
+    # here, not in flatten_tools: structured sessions support image results.
+    flat = [tool for tool in flat if tool['name'] != 'view_image']
     if choice == 'none':
         flat = []
     priority = {'shell_command': 0, 'exec_command': 0, 'apply_patch': 1}

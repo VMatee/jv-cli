@@ -26,6 +26,17 @@ SECRET = '<html>selector=#private token=SECRET https://private/credential</html>
 
 
 class PublicErrors(unittest.TestCase):
+    def test_http_rejection_preserves_only_validated_support_fields(self):
+        for code in ('JV-AGENT-UNSUPPORTED-001', 'malformed-secret'):
+            raw = json.dumps({'error': {'code': code, 'message': SECRET}}).encode()
+            response = urllib.error.HTTPError('http://127.0.0.1:9/v1/responses', 404, 'missing', {}, io.BytesIO(raw))
+            error = JvApiClient._http_error('Structured response submission', response)
+            if code.startswith('JV-'):
+                self.assertEqual(error.public_error.code, code)
+                self.assertIsNone(error.public_error.message)
+            else:
+                self.assertIsNone(error.public_error)
+
     @contextmanager
     def private_state(self):
         # SessionRuntime persists metadata through the real platform boundary.
