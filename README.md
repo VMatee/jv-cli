@@ -2,7 +2,7 @@
 
 An AI coding assistant for your terminal. Ask questions about a project, make changes, run checks, and return to saved work.
 
-**Source version: 0.5.2** · [Published releases](https://github.com/VMatee/jv-cli/releases/latest) · [What's new](docs/CHANGELOG.md)
+**Source version: 0.5.3 (release candidate in preparation)** · [Published releases](https://github.com/VMatee/jv-cli/releases/latest) · [What's new](docs/CHANGELOG.md)
 
 ## Get started
 

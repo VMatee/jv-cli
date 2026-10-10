@@ -95,6 +95,7 @@ def main():
         ('execution policy', ('test_execution_policy',)),
         ('package integrity', ('test_windows_packaging',)),
         ('public remote support/status', ('test_public_errors',)),
+        ('structured images/history', ('test_structured_images.ImageBridgeTests', 'test_image_history')),
     ):
         result = unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.loadTestsFromNames(names))
         ok = result.wasSuccessful() and not result.skipped

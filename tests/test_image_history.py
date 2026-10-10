@@ -3,7 +3,6 @@
 import copy
 import json
 import struct
-import tempfile
 import unittest
 import urllib.request
 import zlib
@@ -24,6 +23,7 @@ from jvcli.transport import JvApiClient, JvClientConfig
 from test_structured import FakeStructuredClient, WireServer, message, response, tool
 from test_structured_core import core_request
 from test_structured_images import image, png
+from structured_test_support import private_state
 
 
 class ImageHistoryTests(unittest.TestCase):
@@ -36,7 +36,7 @@ class ImageHistoryTests(unittest.TestCase):
                 JvClientConfig(base_url=remote.base, poll_interval=0.001)
             )
             client._token = "SYNTHETIC-TOKEN"
-            with tempfile.TemporaryDirectory() as td:
+            with private_state() as td:
                 processor = StructuredProcessor(client, Path(td))
                 runtime = AdapterRuntime(client, processor=processor)
                 port = runtime.start()
@@ -149,7 +149,7 @@ class ImageHistoryTests(unittest.TestCase):
 
     def test_task_and_durable_round_budgets_are_separate_from_images(self):
         for budget in ("model", "durable"):
-            with self.subTest(budget=budget), tempfile.TemporaryDirectory() as td:
+            with self.subTest(budget=budget), private_state() as td:
                 responses = [
                     response(
                         output=[
@@ -184,7 +184,7 @@ class ImageHistoryTests(unittest.TestCase):
 
     def test_completion_opens_gate_before_immediate_continuation(self):
         for streaming in (False, True):
-            with self.subTest(streaming=streaming), tempfile.TemporaryDirectory() as td:
+            with self.subTest(streaming=streaming), private_state() as td:
                 client = FakeStructuredClient([response(output=[message()])])
                 runtime = AdapterRuntime(
                     client, processor=StructuredProcessor(client, Path(td))

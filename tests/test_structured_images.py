@@ -18,6 +18,7 @@ from jvcli.images import snapshot_images
 from jvcli.safety import ProtocolError, SubmissionUncertain, redact
 from jvcli.structured import StructuredProcessor
 from jvcli.transport import JvApiClient, JvClientConfig
+from structured_test_support import private_state
 
 
 def png():
@@ -40,7 +41,7 @@ class ImageBridgeTests(unittest.TestCase):
                 JvApiClient.normalized_response_body({'input': content})
 
     def test_image_tool_result_rejected_over_http_with_no_remote_continuation(self):
-        with tempfile.TemporaryDirectory() as td:
+        with private_state() as td:
             client = FakeStructuredClient([response(output=[tool()])])
             runtime = AdapterRuntime(client, processor=StructuredProcessor(client, Path(td)))
             request = local_request()
@@ -64,7 +65,7 @@ class ImageBridgeTests(unittest.TestCase):
                 runtime.close()
 
     def test_custom_patch_rejected_over_loopback_without_execution(self):
-        with tempfile.TemporaryDirectory() as td:
+        with private_state() as td:
             client = FakeStructuredClient([])
             runtime = AdapterRuntime(client, processor=StructuredProcessor(client, Path(td)))
             port = runtime.start()
@@ -94,7 +95,7 @@ class ImageBridgeTests(unittest.TestCase):
             client._token = 'SYNTHETIC-TOKEN'
             remote.create_status = 200
             remote.create_payload = response(output=[tool()])
-            with tempfile.TemporaryDirectory() as td:
+            with private_state() as td:
                 runtime = AdapterRuntime(client, processor=StructuredProcessor(client, Path(td)))
                 port = runtime.start()
                 try:
@@ -129,7 +130,7 @@ class ImageBridgeTests(unittest.TestCase):
             remote.close()
 
     def test_large_image_restart_reuses_exact_durable_body(self):
-        with tempfile.TemporaryDirectory() as td:
+        with private_state() as td:
             request = local_request()
             # Signature preflight is deliberately not a full decoder; JV owns decoding.
             request['input'][0]['content'] = [image(png() + b'\0' * (1024 * 1024))]
@@ -141,7 +142,15 @@ class ImageBridgeTests(unittest.TestCase):
             restarted = AdapterRuntime(next_client, processor=StructuredProcessor(next_client, Path(td)))
             restarted.process_request(request)
             self.assertEqual(client.posts[0], next_client.posts[0])
-            self.assertEqual(os.stat(Path(td) / 'state.json').st_mode & 0o777, 0o600)
+            if os.name == 'nt':
+                from jvcli.platform import _windows_fs as fs
+                handle = fs.open_handle(Path(td) / 'state.json')
+                try:
+                    fs.inspect(handle, directory=False, private=True)
+                finally:
+                    fs._close(handle)
+            else:
+                self.assertEqual(os.stat(Path(td) / 'state.json').st_mode & 0o777, 0o600)
 
     def test_invalid_images_rejected_before_submission(self):
         cases = [
@@ -158,7 +167,7 @@ class ImageBridgeTests(unittest.TestCase):
             [image(), {'type': 'input_file', 'file_id': 'file_unsupported'}],
         ]
         for parts in cases:
-            with self.subTest(parts_count=len(parts)), tempfile.TemporaryDirectory() as td:
+            with self.subTest(parts_count=len(parts)), private_state() as td:
                 client = FakeStructuredClient([])
                 runtime = AdapterRuntime(client, processor=StructuredProcessor(client, Path(td)))
                 request = local_request()
@@ -169,7 +178,7 @@ class ImageBridgeTests(unittest.TestCase):
 
     def test_view_image_array_and_custom_output_fail_closed(self):
         for result in ([image()], [{'type': 'input_text', 'text': 'ok'}], [{'type': 'unknown'}]):
-            with tempfile.TemporaryDirectory() as td:
+            with private_state() as td:
                 client = FakeStructuredClient([response(output=[tool()])])
                 runtime = AdapterRuntime(client, processor=StructuredProcessor(client, Path(td)))
                 request = local_request()

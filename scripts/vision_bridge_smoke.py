@@ -32,7 +32,25 @@ TOKEN = 'SYNTHETIC_VISION_TOKEN'
 
 
 def shell_python(code):
+    if os.name == 'nt':
+        encoded = base64.b64encode(code.encode()).decode()
+        executable = str(Path(sys.executable)).replace("'", "''")
+        return f"& '{executable}' -B -c \"import base64;exec(base64.b64decode('{encoded}'))\""
     return shlex.join([sys.executable, '-B', '-c', code])
+
+
+def commands(*parts):
+    # Windows PowerShell 5.1 has no &&. Preserve fail-fast tool evidence.
+    return ('; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; '
+            if os.name == 'nt' else ' && ').join(parts)
+
+
+def run_command(argv, env=None):
+    if os.name == 'nt':
+        return shell_python('import os,subprocess; subprocess.run('+repr(list(map(str, argv)))+
+                            ',env={**os.environ,**'+repr(env or {})+'},check=True)')
+    prefix = ''.join(k+'='+shlex.quote(str(v))+' ' for k,v in (env or {}).items())
+    return prefix+shlex.join(list(map(str, argv)))
 
 
 class Fixture:
@@ -43,13 +61,15 @@ class Fixture:
         self.images = []
         self.errors = []
         self.steps = []
-        html = '<!doctype html><title>Vision fixture</title><h1>Before inspection</h1><p>Local synthetic site</p>'
+        html = '<!doctype html><title>Vision fixture</title><style>body{font-family:system-ui}</style><h1>Before inspection</h1><p>Local synthetic site</p>'
         files = {'index.html': html, 'package.json': json.dumps({'private': True, 'scripts': {
             'build': 'node build.cjs', 'test': 'node test.cjs'}}),
+            'style.css': 'body { color: #18324a; background: #f4f8fb; }',
+            'app.js': "document.documentElement.dataset.ready = 'true';",
             'build.cjs': "const fs=require('node:fs'); fs.mkdirSync('dist',{recursive:true}); fs.copyFileSync('index.html','dist/index.html'); console.log('BUILD_OK');",
             'test.cjs': "const assert=require('node:assert/strict'),fs=require('node:fs'); assert.match(fs.readFileSync('dist/index.html','utf8'), /<h1>.+<\\/h1>/); console.log('TEST_OK');"}
         create = shell_python('from pathlib import Path; files='+repr(files)+'; [(Path(k).write_text(v)) for k,v in files.items()]')
-        build_test = shlex.join([str(node), 'build.cjs'])+' && '+shlex.join([str(node), 'test.cjs'])
+        build_test = commands(run_command([node, 'build.cjs']), run_command([node, 'test.cjs']))
         capture = (
             "const {chromium}=require("+json.dumps(str(playwright))+ ");"
             "const fs=require('node:fs'); (async()=>{const b=await chromium.launch();try{"
@@ -58,18 +78,19 @@ class Fixture:
             "await p.screenshot({path:'screen.png'}); await p.screenshot({path:'screen.jpg',type:'jpeg'});"
             "console.log('SCREENSHOTS_OK');}finally{await b.close();}})().catch(()=>process.exit(1));"
         )
-        capture_command = 'PLAYWRIGHT_BROWSERS_PATH='+shlex.quote(str(browsers))+' '+shlex.join([str(node), '-e', capture])
+        capture_command = run_command([node, '-e', capture], {'PLAYWRIGHT_BROWSERS_PATH':str(browsers)})
         webp = shell_python("from PIL import Image; Image.open('screen.png').save('screen.webp'); print('WEBP_OK')")
         modify = shell_python("from pathlib import Path; p=Path('index.html'); p.write_text(p.read_text().replace('Before inspection','After inspection')); print('EDIT_OK')")
         verify = shell_python("from pathlib import Path; assert 'After inspection' in Path('dist/index.html').read_text(); print('FINAL_TEST_OK')")
         self.steps = [
-            ('shell_command', {'command':create+' && '+build_test}, 'TEST_OK'),
-            ('shell_command', {'command':capture_command+' && '+webp}, 'WEBP_OK'),
+            ('shell_command', {'command':commands(create, build_test)}, 'TEST_OK'),
+            ('shell_command', {'command':commands(capture_command, webp)}, 'WEBP_OK'),
             *[('view_image', {'path':'screen.'+ext}, 'image') for ext in ('png','jpg','webp')],
-            ('shell_command', {'command':modify+' && '+build_test+' && '+verify}, 'FINAL_TEST_OK'),
+            ('shell_command', {'command':commands(modify, build_test, verify)}, 'FINAL_TEST_OK'),
         ]
         self.step = 0
         self.awaiting = None
+        self.awaiting_call = None
         self.completed_tasks = 0
         owner = self
 
@@ -131,6 +152,8 @@ class Fixture:
         assert any(t.get('name') == 'view_image' for t in body['tools'])
         ctx = json.loads(body['instructions'].split('JV task context (data):\n')[-1])
         if self.awaiting:
+            assert body['input'][0]['type'] == 'function_call_output'
+            assert body['input'][0]['call_id'] == self.awaiting_call
             output = body['input'][0]['output']
             assert body.get('previous_response_id')
             if self.awaiting == 'image':
@@ -168,6 +191,8 @@ class Fixture:
                 "from pathlib import Path; assert 'After inspection' in Path('index.html').read_text(); print('RESUME_OK')")})}
         else:
             item = self.message('Ready for the mandatory completion review.',n)
+        if item['type'] == 'function_call':
+            self.awaiting_call = item['call_id']
         return {'id':f'response_{n}','object':'response','status':'completed','error':None,'output':[item]}
 
     @staticmethod
