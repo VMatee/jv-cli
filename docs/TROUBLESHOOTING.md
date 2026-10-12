@@ -2,7 +2,7 @@
 
 ## `jvcli` is not found
 
-Add the per-user command directory to your current shell:
+On Linux, add the per-user command directory to your current shell:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
@@ -11,9 +11,13 @@ jvcli --version
 
 You can also run `$HOME/.local/bin/jvcli` directly. Use `./install.sh --add-path` only if you want the installer to update your shell startup file.
 
+On Windows, reopen your terminal after selecting the installer's user-PATH option, or launch `jvcli.exe` directly from `%LOCALAPPDATA%\Programs\JV CLI`. Portable extraction does not add PATH. See [Windows installation](WINDOWS_INSTALL.md).
+
 ## Installation is incomplete
 
-Check that Python 3.10+, Node.js 18+, and npm are installed and network access is available. From the trusted installed or extracted application directory, run `./install.sh`, then `jvcli doctor`. Do not install an unrelated similarly named system package.
+For the Linux normal package, check that Python 3.10+, Node.js 18+, and npm are installed and network access is available. From the trusted installed or extracted application directory, run `./install.sh`, then `jvcli doctor`. Do not install an unrelated similarly named system package.
+
+The official Windows package bundles its runtime; separate Python, Node.js, npm, or Codex installations are unnecessary. Verify the official download and run `jvcli.exe doctor`. Do not use Linux shell installers on Windows or replace the pinned engine with one from PATH.
 
 ## The password is requested again
 
@@ -31,7 +35,9 @@ Malformed or unsupported responses stop safely. Keep the error code and version 
 
 ## File writes or networking are denied
 
-Use `/permissions` to check the current session. `--read-only` denies writes and project-tool networking. `--no-network` disables project-tool networking while preserving workspace edits. Restart with the intended flags; `--allow-network` cannot be combined with `--read-only`.
+On Linux, use `/permissions` to check the current session. `--read-only` denies writes and project-tool networking. `--no-network` disables project-tool networking while preserving workspace edits. Restart with the intended flags; `--allow-network` cannot be combined with `--read-only`.
+
+On Windows, native execution requires explicit `--execution-mode trusted-host`, which enables full host access and networking. Read-only or network-denied requests are unsupported and rejected. This mode is suitable only for dedicated worker PCs; see [security](SECURITY.md).
 
 If system protection prevents a task from running, collect `jvcli doctor` output and contact support. Do not disable system security or grant administrator access merely to force a task through.
 

@@ -1,11 +1,13 @@
 # Changelog
 
-## 0.5.3 — release candidate in preparation
+## 0.5.3 — prepared source, release pending
 
 - Support explicit Structured bridge sessions for image-assisted coding with
   PNG, JPEG and WebP, followed by further edits and tests in the same session.
 - Preserve explicit Legacy selection and report unsupported Structured services
   without an automatic fallback submission.
+- Send the certified Windows patch declaration in the compatible service format
+  without changing patch contents.
 - Windows installer acceptance and release publication are pending.
 
 ## 0.5.2 - remote support codes and recovery status
