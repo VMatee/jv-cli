@@ -37,6 +37,22 @@ class PublicErrors(unittest.TestCase):
             else:
                 self.assertIsNone(error.public_error)
 
+    def test_static_input_limits_survive_http_rejection_without_private_details(self):
+        messages = [
+            'Agent context exceeds the text limit; start a new response without previous_response_id',
+            'Structured context exceeds the frozen binding text limit',
+            'Structured task round budget exhausted; start a new response',
+            'Custom input/output exceeds the 32 KiB limit',
+        ]
+        for message in messages:
+            for candidate in (message, message + '\n', message + ' token=SECRET'):
+                with self.subTest(message=candidate):
+                    raw = json.dumps({'error': {'code': 'JV-INPUT-001', 'message': candidate}}).encode()
+                    response = urllib.error.HTTPError('http://127.0.0.1:9/v1/responses', 400, 'bad request', {}, io.BytesIO(raw))
+                    error = JvApiClient._http_error('Structured response submission', response)
+                    self.assertEqual(error.public_error.code, 'JV-INPUT-001')
+                    self.assertEqual(error.public_error.message, message if candidate == message else None)
+
     @contextmanager
     def private_state(self):
         # SessionRuntime persists metadata through the real platform boundary.

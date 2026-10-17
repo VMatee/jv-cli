@@ -38,6 +38,10 @@ PUBLIC_ERROR_MESSAGES = frozenset({
     "The service restarted after submission. The request was not sent again to prevent a duplicate.",
     "Provider job failed.",
     "Provider is temporarily unavailable.",
+    "Agent context exceeds the text limit; start a new response without previous_response_id",
+    "Structured context exceeds the frozen binding text limit",
+    "Structured task round budget exhausted; start a new response",
+    "Custom input/output exceeds the 32 KiB limit",
 })
 
 

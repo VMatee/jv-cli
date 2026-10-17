@@ -33,6 +33,23 @@ Read the final error and review the files and test results already produced. Fai
 
 Malformed or unsupported responses stop safely. Keep the error code and version for support, but omit credentials and private project content. Repeated retries will not resolve an unsupported capability.
 
+## `JV-INPUT-001` during a Structured task
+
+This code means the service rejected an input; it does not identify one specific
+cause. Updated CLI and Desktop builds preserve reviewed context-size, tool-output
+size, and task-round-limit reasons when the service supplies them. Both clients
+must be updated for the detail to appear in Desktop.
+
+If the detail says the context or round budget is exhausted, review changes already
+made and start a fresh session in the same project folder. Continue with one small,
+specific task and ask for targeted file reads instead of whole-file dumps. Do not
+resume or repeatedly resend the exhausted conversation. Starting a new session
+preserves project files but does not carry over the previous conversation.
+
+If a tool result exceeds its size limit, narrow that command's output. If only the
+code appears, keep the failure time, client build versions, and code for support;
+do not assume changing account permissions or increasing limits is the fix.
+
 ## File writes or networking are denied
 
 On Linux, use `/permissions` to check the current session. `--read-only` denies writes and project-tool networking. `--no-network` disables project-tool networking while preserving workspace edits. Restart with the intended flags; `--allow-network` cannot be combined with `--read-only`.
